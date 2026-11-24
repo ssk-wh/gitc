@@ -620,9 +620,6 @@ func treeLines(rows []fileRow, expanded map[string]bool, sel int, off *int, widt
 			col = colorMagenta
 		}
 		left := indent + n.name
-		if dir := pathDir(n.path); dir != "" {
-			left += "  " + dir
-		}
 		if staged {
 			left += i18n.S(" (已暂存)", " (staged)")
 		}
@@ -636,16 +633,6 @@ func treeLines(rows []fileRow, expanded map[string]bool, sel int, off *int, widt
 		out = append(out, "")
 	}
 	return out
-}
-
-// pathDir 返回文件路径的目录部分。
-func pathDir(path string) string {
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '/' || path[i] == '\\' {
-			return path[:i]
-		}
-	}
-	return ""
 }
 
 // nodeStatus 返回文件节点的状态字母与是否含已暂存条目。
