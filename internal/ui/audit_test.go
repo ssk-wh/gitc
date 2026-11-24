@@ -66,6 +66,14 @@ func TestMenuBorderWidthsEqual(t *testing.T) {
 			t.Errorf("第 %d 行宽度 %d != %d: %q", i, strWidth(l), w, l)
 		}
 	}
+	// 标题右侧必须用横线填充，不能用空格凑宽度（否则标题行会缺横线）。
+	top := lines[0]
+	if !strings.HasPrefix(top, "╭─ ") || !strings.HasSuffix(top, "─╮") {
+		t.Errorf("标题行首尾不符合边框样式: %q", top)
+	}
+	if mid := strings.TrimSuffix(strings.TrimPrefix(top, "╭─ "), "─╮"); strings.Contains(mid, "  ") {
+		t.Errorf("标题行出现空格填充（应为横线）: %q", top)
+	}
 }
 
 func TestInlineInputRenderedInFooter(t *testing.T) {
@@ -320,5 +328,22 @@ func TestMenuOverlayKeepsBackgroundText(t *testing.T) {
 			t.Errorf("菜单第 %d 行宽度不一致", i)
 		}
 		_ = x
+	}
+}
+
+func TestAltRightFilesToContent(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pane = PaneFiles
+	a.altFocus("right")
+	if a.pane != PaneContent {
+		t.Errorf("文件区 Alt+Right = %v, 期望内容区", a.pane)
+	}
+	a.altFocus("left")
+	if a.pane != PaneFiles {
+		t.Errorf("内容区 Alt+Left = %v, 期望文件区", a.pane)
+	}
+	a.altFocus("left")
+	if a.pane != PaneChanges {
+		t.Errorf("文件区再次 Alt+Left = %v, 期望改动区", a.pane)
 	}
 }

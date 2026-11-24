@@ -1108,26 +1108,26 @@ func (a *App) altFocus(dir string) {
 			}
 		}
 	case "left":
-		if !left {
-			switch a.pane {
-			case PaneCommits:
-				a.pane = PaneBranches
-			case PaneFiles, PaneContent:
-				a.pane = PaneChanges
-			case PaneLog:
-				a.pane = PaneInfo
-			}
+		switch a.pane {
+		case PaneCommits:
+			a.pane = PaneBranches
+		case PaneFiles:
+			a.pane = PaneChanges
+		case PaneContent:
+			a.pane = PaneFiles
+		case PaneLog:
+			a.pane = PaneInfo
 		}
 	case "right":
-		if left {
-			switch a.pane {
-			case PaneBranches:
-				a.pane = PaneCommits
-			case PaneChanges:
-				a.pane = PaneFiles
-			case PaneInfo:
-				a.pane = PaneLog
-			}
+		switch a.pane {
+		case PaneBranches:
+			a.pane = PaneCommits
+		case PaneChanges:
+			a.pane = PaneFiles
+		case PaneFiles:
+			a.pane = PaneContent
+		case PaneInfo:
+			a.pane = PaneLog
 		}
 	}
 	a.ensurePaneVisible()
