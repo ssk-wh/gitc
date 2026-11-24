@@ -4,6 +4,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/ssk-wh/gitc/internal/git"
 )
 
@@ -14,6 +16,7 @@ func (a *App) rebuildCommitColors() {
 	for _, c := range a.commits {
 		byHash[c.Hash] = c
 	}
+	a.rebuildBranchColors(byHash)
 	type seed struct {
 		hash  string
 		color int
@@ -28,7 +31,7 @@ func (a *App) rebuildCommitColors() {
 		if c, ok := byHash[r.Target]; ok {
 			w = c.When
 		}
-		seeds = append(seeds, seed{hash: r.Target, color: colorIndexForRef(r.Name), when: w})
+			seeds = append(seeds, seed{hash: r.Target, color: a.refColorIndex(r.Kind, r.Name), when: w})
 	}
 	sort.SliceStable(seeds, func(i, j int) bool { return seeds[i].when.After(seeds[j].when) })
 
@@ -56,6 +59,56 @@ func (a *App) rebuildCommitColors() {
 		}
 	}
 	a.commitColor = colors
+}
+
+// rebuildBranchColors 按分支最新提交时间倒序分配调色板，保证靠前的分支颜色互不相同。
+func (a *App) rebuildBranchColors(byHash map[string]git.Commit) {
+	latest := map[string]time.Time{}
+	for _, r := range a.refs {
+		if r.Kind != git.RefLocal && r.Kind != git.RefRemote {
+			continue
+		}
+		name := normalizeRefName(r.Kind, r.Name)
+		var w time.Time
+		if c, ok := byHash[r.Target]; ok {
+			w = c.When
+		}
+		if old, ok := latest[name]; !ok || w.After(old) {
+			latest[name] = w
+		}
+	}
+	names := make([]string, 0, len(latest))
+	for n := range latest {
+		names = append(names, n)
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		if !latest[names[i]].Equal(latest[names[j]]) {
+			return latest[names[i]].After(latest[names[j]])
+		}
+		return names[i] < names[j]
+	})
+	m := make(map[string]int, len(names))
+	for i, n := range names {
+		m[n] = i % len(lanePalette)
+	}
+	a.branchColor = m
+}
+
+// refColorIndex 返回引用的配色下标（远端分支与本地同名分支同色）。
+func (a *App) refColorIndex(kind, name string) int {
+	if idx, ok := a.branchColor[normalizeRefName(kind, name)]; ok {
+		return idx
+	}
+	return colorIndexForRef(name)
+}
+
+// refColor 返回引用颜色。
+func (a *App) refColor(kind, name string) lipgloss.AdaptiveColor {
+	idx := a.refColorIndex(kind, name)
+	if idx < 0 || idx >= len(lanePalette) {
+		return colorDim
+	}
+	return lanePalette[idx]
 }
 
 // commitColorOf 返回提交的分支配色下标；未知返回 fallback。

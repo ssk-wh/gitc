@@ -806,8 +806,7 @@ func (a *App) handleGraphKey(k tea.KeyMsg) (cmd tea.Cmd, handled bool) {
 	case "y":
 		c := a.selectedCommit()
 		if c != nil {
-			a.setToast(i18n.S("已复制 "+c.Short, "copied "+c.Short), false)
-			return copyText(c.Hash), true
+			return a.copyToClipboard(c.Hash), true
 		}
 		return nil, true
 	case "C":
@@ -922,8 +921,7 @@ func (a *App) commitActions(c *git.Commit) []choice {
 			return nil
 		}},
 		choice{label: i18n.S("复制完整 sha", "copy full sha"), action: func(a *App) tea.Cmd {
-			a.setToast(i18n.S("已复制 "+c.Short, "copied "+c.Short), false)
-			return copyText(c.Hash)
+			return a.copyToClipboard(c.Hash)
 		}},
 	)
 	return out
@@ -1715,8 +1713,6 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 				a.openBranchesHeaderMenu()
 			case PaneChanges:
 				a.choose(i18n.S("工作区改动（全部）", "working changes (all)"), a.uncommittedMenuChoices())
-			case PaneCommits:
-				a.openBranchFilterMenu()
 			case PaneFiles:
 				a.openFilesHeaderMenu()
 			case PaneContent:
@@ -1912,8 +1908,11 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 		return cmd, true
 	case PaneCommits:
 		if row < 0 {
-			a.modalAnchorX, a.modalAnchorY = m.X, m.Y
-			a.openBranchFilterMenu()
+			// 只有左键点击标题栏才打开分支筛选；点边框/右键不弹菜单
+			if b, ok := a.paneBoxOf(PaneCommits); !right && ok && m.Y == b.y {
+				a.modalAnchorX, a.modalAnchorY = m.X, m.Y
+				a.openBranchFilterMenu()
+			}
 			return nil, true
 		}
 		idx := a.graphOff + row
@@ -2002,6 +2001,16 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 }
 
 // hitTest 根据坐标判断所在区域与内容行号（已扣除边框）。
+// paneBoxOf 返回指定区域的矩形。
+func (a *App) paneBoxOf(p Pane) (paneBox, bool) {
+	for _, b := range a.paneBoxes() {
+		if b.pane == p {
+			return b, true
+		}
+	}
+	return paneBox{}, false
+}
+
 func (a *App) hitTest(x, y int) (Pane, int, bool) {
 	for _, b := range a.paneBoxes() {
 		if x < b.x || x >= b.x+b.w || y < b.y || y >= b.y+b.h {
