@@ -1577,3 +1577,49 @@ func TestCommitInfoFixedPanel(t *testing.T) {
 		t.Error("提交信息标题应位于左下固定面板")
 	}
 }
+
+// TestViewFillsEveryLine 每行都必须补满终端宽度，避免短行右侧残留上一帧内容。
+func TestViewFillsEveryLine(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 60, Height: 16})
+	check := func(name string, view string) {
+		t.Helper()
+		lines := strings.Split(view, "\n")
+		if len(lines) != 16 {
+			t.Fatalf("%s: 行数 %d，期望 16", name, len(lines))
+		}
+		for i, ln := range lines {
+			if w := strWidth(ln); w != 60 {
+				t.Fatalf("%s: 第 %d 行宽度 %d，期望 60: %q", name, i, w, ansi.Strip(ln))
+			}
+		}
+	}
+	check("main", a.View())
+	a.overlay = overlayDetail
+	a.detail.lines = []string{"short", "第二行"}
+	check("detail", a.View())
+	a.overlay = overlayHelp
+	check("help", a.View())
+}
+
+// TestFooterKeepsHintsWithLongToast 长提示不能把右侧快捷键提示挤出屏幕。
+func TestFooterKeepsHintsWithLongToast(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.toast = "已复制: " + strings.Repeat("很长的提交信息", 10)
+	v := plainView(a)
+	lines := strings.Split(v, "\n")
+	last := strings.TrimSpace(lines[len(lines)-1])
+	if !strings.Contains(last, "↑↓") {
+		t.Fatalf("底部快捷键提示被挤掉: %q", last)
+	}
+}
+
+// TestCopyToastImmediate 点击复制时提示必须立即出现，不能等剪贴板命令返回。
+func TestCopyToastImmediate(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.toast = "上一条消息"
+	a.copyToClipboard("新的提交信息")
+	if !strings.Contains(a.toast, "已复制") || !strings.Contains(a.toast, "新的提交信息") {
+		t.Fatalf("复制提示未立即刷新: %q", a.toast)
+	}
+}
