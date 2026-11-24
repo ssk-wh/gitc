@@ -1578,6 +1578,7 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 				}
 				return a, nil
 			case m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft:
+				a.modalPress = a.modal
 				return a, a.modalClick(m)
 			case m.Button == tea.MouseButtonWheelUp:
 				if a.modal.sel > 0 {
@@ -1594,11 +1595,15 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft {
 			return a, a.modalClick(m)
 		}
-		// 部分终端在滚轮后只上报 release，这里也允许单击关闭菜单
+		// 部分终端在滚轮后只上报 release：仅当当前仍是同一个选择菜单时才允许关闭，
+		// 避免 Press 已执行动作并弹出确认框/输入框后，随后的 Release 把它误关。
 		if m.Action == tea.MouseActionRelease && m.Button == tea.MouseButtonLeft {
-			if _, ok := a.choiceIndexAt(m.X, m.Y); !ok {
-				a.modal = nil
+			if a.modal.kind == modalChoice && (a.modalPress == nil || a.modal == a.modalPress) {
+				if _, ok := a.choiceIndexAt(m.X, m.Y); !ok {
+					a.modal = nil
+				}
 			}
+			a.modalPress = nil
 		}
 		return a, nil
 	}

@@ -4,6 +4,7 @@ package clipboard
 
 import (
 	"errors"
+	"runtime"
 	"syscall"
 	"time"
 	"unsafe"
@@ -47,6 +48,7 @@ func Copy(text string) error {
 	}
 	// 通过 RtlMoveMemory 写入，避免在 Go 里做 uintptr -> unsafe.Pointer 转换（go vet 会报错）
 	procRtlMoveMemory.Call(ptr, uintptr(unsafe.Pointer(&utf16[0])), size)
+	runtime.KeepAlive(utf16)
 	procGlobalUnlock.Call(h)
 
 	// 剪贴板可能被其他进程短暂占用，重试几次。

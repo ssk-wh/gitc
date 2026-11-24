@@ -70,7 +70,7 @@ func (s Status) Total() int { return len(s.Staged) + len(s.Unstaged) + len(s.Unt
 func (r *Repo) Status(ctx context.Context, includeUntracked bool) (Status, error) {
 	args := []string{"status", "--porcelain=v2", "--branch", "-z"}
 	if includeUntracked {
-		args = append(args, "--untracked-files=all")
+		args = append(args, "--untracked-files=normal")
 	} else {
 		args = append(args, "--untracked-files=no")
 	}

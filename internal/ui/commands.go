@@ -541,6 +541,12 @@ func (a *App) loadFileContent(f fileEntry, working bool) tea.Cmd {
 	if f.staged {
 		title += i18n.S("  (已暂存)", "  (staged)")
 	}
+	if working && strings.HasSuffix(f.path, "/") {
+		a.content = detailModel{title: title, lines: []string{
+			i18n.S("未跟踪目录：空格暂存整个目录，d 丢弃", "untracked directory: space to stage, d to discard"),
+		}}
+		return nil
+	}
 	a.content = detailModel{loading: true, title: title, sha: a.filesOwner}
 	if working {
 		path, staged, untracked := f.path, f.staged, f.untracked

@@ -209,6 +209,8 @@ func resolveTheme(name string, overrides map[string]string) (Theme, []string) {
 	if t.Name == "" {
 		t = defaultTheme()
 	}
+	// Lanes 是共享切片，覆盖自定义色前必须深拷贝，避免污染全局调色板
+	t.Lanes = append([]lipgloss.AdaptiveColor(nil), t.Lanes...)
 	if !known || t.Name == "" {
 		t.Name = "default"
 	}

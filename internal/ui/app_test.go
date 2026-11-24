@@ -1631,16 +1631,17 @@ func TestFilesScrollReachesLastRow(t *testing.T) {
 	}
 }
 
-// TestFileTreeSkipsDirPlaceholder 目录占位条目（path 以 / 结尾）不能渲染成空白文件。
-func TestFileTreeSkipsDirPlaceholder(t *testing.T) {
-	_, rows := buildFileTree([]fileEntry{{path: "docs/"}, {path: "docs/a.md"}}, map[string]bool{"docs": true})
-	for _, r := range rows {
-		if strings.TrimSpace(r.node.name) == "" {
-			t.Fatalf("出现空白文件名: %+v", r)
-		}
+// TestFileTreeDirPlaceholderNamed 目录占位条目（path 以 / 结尾）应显示为 "docs/"，不能是空白文件。
+func TestFileTreeDirPlaceholderNamed(t *testing.T) {
+	_, rows := buildFileTree([]fileEntry{{path: "docs/"}}, map[string]bool{})
+	if len(rows) != 1 {
+		t.Fatalf("行数 = %d，期望 1: %+v", len(rows), rows)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("行数 = %d，期望 2: %+v", len(rows), rows)
+	if name := rows[0].node.name; name != "docs/" {
+		t.Fatalf("目录占位名称 = %q，期望 docs/", name)
+	}
+	if rows[0].node.path != "docs/" {
+		t.Fatalf("目录占位路径 = %q，期望保留 docs/", rows[0].node.path)
 	}
 }
 
@@ -1745,5 +1746,21 @@ func TestCommitRowShowsBranchAndTag(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("未找到 HEAD 提交行")
+	}
+}
+
+// TestModalReleaseOnlyClosesChoice 鼠标 release 只能关闭选择菜单，不能误关确认框/输入框。
+func TestModalReleaseOnlyClosesChoice(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.modal = &modal{kind: modalConfirm, title: "确认"}
+	a.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 2, Y: 2})
+	if a.modal == nil {
+		t.Fatal("release 不应关闭确认框")
+	}
+	a.modal = &modal{kind: modalChoice, choices: []choice{{label: "x"}}}
+	a.modalAnchorX, a.modalAnchorY = 40, 4
+	a.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 2, Y: a.height - 2})
+	if a.modal != nil {
+		t.Fatal("release 在菜单外应关闭选择菜单")
 	}
 }

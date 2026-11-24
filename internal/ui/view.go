@@ -1332,7 +1332,8 @@ func (a *App) withOverlayScrollbar(s string, total, off, visible int) string {
 	}
 	for i := 0; i < thumb; i++ {
 		idx := 1 + start + i
-		if idx < len(lines) {
+		// 最后一行是“↑/↓ 滚动 esc 返回”，不要覆盖
+		if idx > 0 && idx < len(lines)-1 {
 			lines[idx] = replaceCellStyled(lines[idx], a.width-1, styleAccent.Render("┃"))
 		}
 	}

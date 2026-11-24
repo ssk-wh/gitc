@@ -66,3 +66,22 @@ func TestBuiltinThemes(t *testing.T) {
 		}
 	}
 }
+
+// TestThemeLaneOverrideIsolated 自定义 lane 颜色不能污染其他主题。
+func TestThemeLaneOverrideIsolated(t *testing.T) {
+	t.Cleanup(func() { applyTheme(defaultTheme()) })
+	custom, bad := resolveTheme("default", map[string]string{"lane0": "#ff0000"})
+	if len(bad) != 0 {
+		t.Fatalf("合法颜色被拒: %v", bad)
+	}
+	if custom.Lanes[0].Dark != "#ff0000" {
+		t.Fatalf("自定义 lane0 未生效: %+v", custom.Lanes[0])
+	}
+	ocean, _ := resolveTheme("ocean", nil)
+	if ocean.Lanes[0].Dark == "#ff0000" {
+		t.Fatal("lane 自定义色污染了其他主题")
+	}
+	if defaultLanes[0].Dark == "#ff0000" {
+		t.Fatal("全局默认调色板被改写")
+	}
+}

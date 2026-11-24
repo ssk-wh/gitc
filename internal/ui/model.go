@@ -209,6 +209,7 @@ type App struct {
 
 	modalChoiceStart int
 	modal            *modal
+	modalPress       *modal
 
 	busy       bool
 	taskName   string
@@ -590,8 +591,15 @@ func buildFileTreeDefault(files []fileEntry, expanded map[string]bool, defaultEx
 	dirs := map[string]*fileNode{}
 	for _, fe := range files {
 		raw := strings.ReplaceAll(fe.path, "\\", "/")
-		if raw == "" || strings.HasSuffix(raw, "/") {
-			continue // 目录占位条目没有文件名，跳过
+		if raw == "" {
+			continue
+		}
+		if strings.HasSuffix(raw, "/") {
+			// git 对整目录未跟踪时只给一个 "docs/" 占位：显示为可操作的目录条目，
+			// 不再生成空文件名；可整目录暂存/丢弃。
+			name := strings.Trim(raw, "/") + "/"
+			roots = append(roots, &fileNode{name: name, path: raw, entries: []fileEntry{fe}})
+			continue
 		}
 		path := strings.Trim(raw, "/")
 		parts := strings.Split(path, "/")
