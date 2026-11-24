@@ -309,16 +309,29 @@ type copyMsg struct {
 	err   error
 }
 
-// copyText 复制文本到系统剪贴板。
-func copyText(text string) tea.Cmd {
-	label := text
+// copyLabel 生成提示里展示的短文本。
+func copyLabel(text string) string {
+	label := strings.ReplaceAll(text, "\n", " ")
 	runes := []rune(label)
 	if len(runes) > 24 {
 		label = string(runes[:24]) + "…"
 	}
+	return label
+}
+
+// copyText 复制文本到系统剪贴板。
+func copyText(text string) tea.Cmd {
+	label := copyLabel(text)
 	return func() tea.Msg {
 		return copyMsg{label: label, err: clipboard.Copy(text)}
 	}
+}
+
+// copyToClipboard 立即显示“已复制”提示，再异步写剪贴板。
+// 剪贴板写入在部分平台较慢，若等命令返回才提示，界面会一直停留在上一条消息。
+func (a *App) copyToClipboard(text string) tea.Cmd {
+	a.setToast(i18n.S("已复制: ", "copied: ")+copyLabel(text), false)
+	return copyText(text)
 }
 
 // —— 弹窗辅助 ——

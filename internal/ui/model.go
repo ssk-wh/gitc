@@ -587,7 +587,11 @@ func buildFileTreeDefault(files []fileEntry, expanded map[string]bool, defaultEx
 	roots := []*fileNode{}
 	dirs := map[string]*fileNode{}
 	for _, fe := range files {
-		path := strings.ReplaceAll(fe.path, "\\", "/")
+		raw := strings.ReplaceAll(fe.path, "\\", "/")
+		if raw == "" || strings.HasSuffix(raw, "/") {
+			continue // 目录占位条目没有文件名，跳过
+		}
+		path := strings.Trim(raw, "/")
 		parts := strings.Split(path, "/")
 		cur := &roots
 		curPath := ""
@@ -688,9 +692,13 @@ func (a *App) rebuildChanges() {
 
 // infoViewHeight 是左下提交信息区可显示行数。
 func (a *App) infoViewHeight() int {
-	h := a.panelLayout().leftBotH - 1
-	if h < 2 {
-		h = 2
+	l := a.panelLayout()
+	h := l.bodyH - 2
+	if l.split {
+		h = l.leftBotH - 2
+	}
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -721,12 +729,12 @@ func (a *App) infoLineCount() int {
 // branchViewHeight 是左侧分支区可显示行数（宽窄屏分别取分支面板高度）。
 func (a *App) branchViewHeight() int {
 	l := a.panelLayout()
-	h := l.bodyH - 1
+	h := l.bodyH - 2
 	if l.split {
-		h = l.leftTopH - 1
+		h = l.leftTopH - 2
 	}
-	if h < 2 {
-		h = 2
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -734,12 +742,12 @@ func (a *App) branchViewHeight() int {
 // changesViewHeight 是左下改动区可显示行数。
 func (a *App) changesViewHeight() int {
 	l := a.panelLayout()
-	h := l.bodyH - 1
+	h := l.bodyH - 2
 	if l.split {
-		h = l.leftMidH - 1
+		h = l.leftMidH - 2
 	}
-	if h < 2 {
-		h = 2
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -972,16 +980,15 @@ func (a *App) panelLayout() panelLayout {
 
 // commandViewHeight 是命令历史区可显示行数。
 func (a *App) commandViewHeight() int {
-	h := 6
-	if a.panelLayout().split {
-		h = a.panelLayout().cmdH
-	} else {
-		h = 6
+	l := a.panelLayout()
+	h := l.bodyH - 2
+	if l.split && l.cmdH > 0 {
+		h = l.cmdH - 2
 	}
-	if h < 2 {
-		h = 2
+	if h < 1 {
+		h = 1
 	}
-	return h - 1
+	return h
 }
 
 // clampCmdOffset 限制命令历史滚动。
@@ -1019,12 +1026,13 @@ func (a *App) LeftWidth() int { return a.panelLayout().leftW }
 
 // commitViewHeight 是提交区可显示行数（去掉面板标题）。
 func (a *App) commitViewHeight() int {
-	h := a.panelLayout().rightTopH - 1
-	if !a.panelLayout().split {
-		h = a.panelLayout().bodyH - 1
+	l := a.panelLayout()
+	h := l.bodyH - 2
+	if l.split {
+		h = l.rightTopH - 2
 	}
-	if h < 2 {
-		h = 2
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -1047,7 +1055,7 @@ func (a *App) drawerHeight() int {
 
 // drawerBodyHeight 是抽屉内容行数（去掉标题行）。
 func (a *App) drawerBodyHeight() int {
-	h := a.drawerHeight() - 1
+	h := a.drawerHeight() - 2
 	if h < 1 {
 		h = 1
 	}
