@@ -76,6 +76,29 @@ func TestMenuBorderWidthsEqual(t *testing.T) {
 	}
 }
 
+// 带分页信息的菜单标题也不能把边框撑宽。
+func TestMenuBorderWidthsEqualPaged(t *testing.T) {
+	a, _ := newFakeApp(t)
+	choices := make([]choice, 0, 50)
+	for i := 0; i < 50; i++ {
+		choices = append(choices, choice{label: "选项"})
+	}
+	a.choose("一个很长很长很长很长很长很长很长的菜单标题用于测试分页", choices)
+	lines, _, _ := a.choiceMenuBox()
+	if len(lines) < 2 {
+		t.Fatal("菜单未渲染")
+	}
+	w := strWidth(lines[0])
+	for i, l := range lines {
+		if strWidth(l) != w {
+			t.Errorf("第 %d 行宽度 %d != %d: %q", i, strWidth(l), w, l)
+		}
+	}
+	if !strings.Contains(lines[0], "/50") {
+		t.Errorf("分页信息缺失: %q", lines[0])
+	}
+}
+
 func TestInlineInputRenderedInFooter(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.prompt("重命名分支", "new-name", "main", nil)
