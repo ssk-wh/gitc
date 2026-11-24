@@ -293,3 +293,32 @@ func TestViewAlwaysTerminalSized(t *testing.T) {
 		}
 	}
 }
+
+func TestMenuOverlayKeepsBackgroundText(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a.modalAnchorX, a.modalAnchorY = 30, 5
+	a.choose("测试菜单", []choice{{label: "一"}, {label: "二"}})
+	box, x, y := a.choiceMenuBox()
+	base := make([]string, 40)
+	for i := range base {
+		base[i] = "左" + strings.Repeat("=", 90) + "右"
+	}
+	out := plainView(a) // 只用于确保布局
+	_ = out
+	spliced := a.viewChoiceOverlay(strings.Join(base, string(rune(10))))
+	lines := strings.Split(spliced, string(rune(10)))
+	row := lines[y]
+	if !strings.HasPrefix(row, "左") {
+		t.Errorf("菜单左侧背景被清空: %q", row)
+	}
+	if !strings.HasSuffix(strings.TrimRight(row, " "), "右") {
+		t.Errorf("菜单右侧背景被清空: %q", row)
+	}
+	for i, l := range box {
+		if strWidth(l) != strWidth(box[0]) {
+			t.Errorf("菜单第 %d 行宽度不一致", i)
+		}
+		_ = x
+	}
+}
