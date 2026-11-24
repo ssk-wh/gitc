@@ -806,8 +806,7 @@ func (a *App) handleGraphKey(k tea.KeyMsg) (cmd tea.Cmd, handled bool) {
 	case "y":
 		c := a.selectedCommit()
 		if c != nil {
-			a.setToast(i18n.S("已复制 "+c.Short, "copied "+c.Short), false)
-			return copyText(c.Hash), true
+			return a.copyToClipboard(c.Hash), true
 		}
 		return nil, true
 	case "C":
@@ -922,8 +921,7 @@ func (a *App) commitActions(c *git.Commit) []choice {
 			return nil
 		}},
 		choice{label: i18n.S("复制完整 sha", "copy full sha"), action: func(a *App) tea.Cmd {
-			a.setToast(i18n.S("已复制 "+c.Short, "copied "+c.Short), false)
-			return copyText(c.Hash)
+			return a.copyToClipboard(c.Hash)
 		}},
 	)
 	return out
@@ -1607,15 +1605,13 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.X == l.leftW:
 				a.hoverDiv = 1
-			case m.X < l.leftW && (ly == l.leftTopH-1 || ly == l.leftTopH):
+			case m.X < l.leftW && ly == l.leftTopH:
 				a.hoverDiv = 4
-			case m.X < l.leftW && (ly == l.leftTopH+l.leftMidH-1 || ly == l.leftTopH+l.leftMidH):
-				a.hoverDiv = 6
-			case m.X > l.leftW && (ly == l.rightTopH-1 || ly == l.rightTopH):
+			case m.X > l.leftW && ly == l.rightTopH:
 				a.hoverDiv = 2
-			case l.cmdH > 0 && m.X > l.leftW && (ly == l.rightTopH+l.drawerH-1 || ly == l.rightTopH+l.drawerH):
+			case l.cmdH > 0 && m.X > l.leftW && ly == l.rightTopH+1+l.drawerH:
 				a.hoverDiv = 5
-			case m.X == l.leftW+1+a.drawerSplit(l.rightW) && ly >= l.rightTopH && ly < l.rightTopH+l.drawerH:
+			case m.X == l.leftW+1+a.drawerSplit(l.rightW) && ly > l.rightTopH && ly < l.rightTopH+1+l.drawerH:
 				a.hoverDiv = 3
 			default:
 				a.hoverDiv = 0
@@ -1649,23 +1645,19 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 				if detect(1, "div:left", func() { a.leftW = 0 }) {
 					return a, nil
 				}
-			case m.X < l.leftW && (ly == l.leftTopH-1 || ly == l.leftTopH):
+			case m.X < l.leftW && ly == l.leftTopH:
 				if detect(4, "div:lefttop", func() { a.leftTopH = 0 }) {
 					return a, nil
 				}
-			case m.X < l.leftW && (ly == l.leftTopH+l.leftMidH-1 || ly == l.leftTopH+l.leftMidH):
-				if detect(6, "div:leftmid", func() { a.leftMidH = 0 }) {
-					return a, nil
-				}
-			case m.X > l.leftW && (ly == l.rightTopH-1 || ly == l.rightTopH):
+			case m.X > l.leftW && ly == l.rightTopH:
 				if detect(2, "div:top", func() { a.rightTopH = 0 }) {
 					return a, nil
 				}
-			case l.cmdH > 0 && m.X > l.leftW && (ly == l.rightTopH+l.drawerH-1 || ly == l.rightTopH+l.drawerH):
+			case l.cmdH > 0 && m.X > l.leftW && ly == l.rightTopH+1+l.drawerH:
 				if detect(5, "div:cmd", func() { a.cmdH = 0 }) {
 					return a, nil
 				}
-			case m.X == l.leftW+1+a.drawerSplit(l.rightW) && ly >= l.rightTopH && ly < l.rightTopH+l.drawerH:
+			case m.X == l.leftW+1+a.drawerSplit(l.rightW) && ly > l.rightTopH && ly < l.rightTopH+1+l.drawerH:
 				if detect(3, "div:vert", func() { a.drawerLeftW = 0 }) {
 					return a, nil
 				}
@@ -1715,8 +1707,6 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 				a.openBranchesHeaderMenu()
 			case PaneChanges:
 				a.choose(i18n.S("工作区改动（全部）", "working changes (all)"), a.uncommittedMenuChoices())
-			case PaneCommits:
-				a.openBranchFilterMenu()
 			case PaneFiles:
 				a.openFilesHeaderMenu()
 			case PaneContent:
@@ -1912,8 +1902,11 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 		return cmd, true
 	case PaneCommits:
 		if row < 0 {
-			a.modalAnchorX, a.modalAnchorY = m.X, m.Y
-			a.openBranchFilterMenu()
+			// 只有左键点击标题栏才打开分支筛选；点边框/右键不弹菜单
+			if b, ok := a.paneBoxOf(PaneCommits); !right && ok && m.Y == b.y {
+				a.modalAnchorX, a.modalAnchorY = m.X, m.Y
+				a.openBranchFilterMenu()
+			}
 			return nil, true
 		}
 		idx := a.graphOff + row
@@ -2002,6 +1995,16 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 }
 
 // hitTest 根据坐标判断所在区域与内容行号（已扣除边框）。
+// paneBoxOf 返回指定区域的矩形。
+func (a *App) paneBoxOf(p Pane) (paneBox, bool) {
+	for _, b := range a.paneBoxes() {
+		if b.pane == p {
+			return b, true
+		}
+	}
+	return paneBox{}, false
+}
+
 func (a *App) hitTest(x, y int) (Pane, int, bool) {
 	for _, b := range a.paneBoxes() {
 		if x < b.x || x >= b.x+b.w || y < b.y || y >= b.y+b.h {
@@ -2090,19 +2093,16 @@ func (a *App) dragTo(x, y int) {
 	case 1:
 		a.leftW = clamp(x, 22, a.width-40)
 	case 4:
-		a.leftTopH = clamp(y, 4, l.bodyH-12)
-	case 6:
-		mid := y - l.leftTopH
-		a.leftMidH = clamp(mid, 4, l.bodyH-l.leftTopH-8)
+		a.leftTopH = clamp(y, 4, l.bodyH-6)
 	case 2:
 		a.rightTopH = clamp(y, 4, l.bodyH-8)
 	case 5:
-		drawerH := y - l.rightTopH
-		cmdH := l.bodyH - l.rightTopH - drawerH
+		drawerH := y - (l.rightTopH + 1)
+		cmdH := l.bodyH - (l.rightTopH + 1 + drawerH) - 1
 		if cmdH < 2 {
 			cmdH = 2
 		}
-		if max := l.bodyH - l.rightTopH - 5; cmdH > max {
+		if max := l.bodyH - l.rightTopH - 6; cmdH > max {
 			cmdH = max
 		}
 		a.cmdH = cmdH
