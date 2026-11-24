@@ -404,3 +404,38 @@ func TestDividerHoverAndDragHighlight(t *testing.T) {
 		t.Errorf("横分隔线未高亮")
 	}
 }
+
+func TestCommitInfoOrder(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pane = PaneCommits
+	a.graphSel = a.dirtyOffset() + 1
+	pump(t, a, a.loadFilesForSelection())
+	a.commitBody = "正文"
+	lines := a.infoLines(60)
+	joined := strings.Join(lines, string(rune(10)))
+	hashIdx := strings.Index(joined, "commit ")
+	timeIdx := strings.Index(joined, "24 Nov 2026")
+	subjIdx := strings.Index(joined, "支持摄像头分辨率")
+	if hashIdx < 0 || timeIdx < 0 || subjIdx < 0 {
+		t.Fatalf("信息缺失: %q", joined)
+	}
+	if !(hashIdx < timeIdx && timeIdx < subjIdx) {
+		t.Errorf("顺序应为 hash -> 时间 -> 标题，实际 %d/%d/%d", hashIdx, timeIdx, subjIdx)
+	}
+}
+
+func TestFileTreeOnlyBasename(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.setFiles([]fileEntry{{path: "src/deep/a.cpp", status: "M"}})
+	a.rebuildFileRows()
+	lines := a.fileColumnLines(60, 10)
+	for _, l := range lines {
+		if strings.Contains(l, "a.cpp") {
+			if strings.Contains(ansi.Strip(l), "src/deep") {
+				t.Errorf("文件行不应重复显示目录: %q", l)
+			}
+			return
+		}
+	}
+	t.Fatal("未找到文件行")
+}
