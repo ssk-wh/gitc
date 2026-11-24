@@ -82,8 +82,14 @@ func (a *App) viewRaw() string {
 func (a *App) baseView() string {
 	var b strings.Builder
 	body := a.viewBody()
-	if a.hoverDiv != 0 && a.panelLayout().split {
-		body = hoverHandle(body, a.hoverX, a.hoverY, a.hoverDiv)
+	if a.panelLayout().split {
+		div := a.hoverDiv
+		if a.dragMode != 0 {
+			div = a.dragMode
+		}
+		if div != 0 {
+			body = a.dividerHighlight(body, div, a.dragMode != 0)
+		}
 	}
 	b.WriteString(body)
 	b.WriteByte('\n')
@@ -120,23 +126,48 @@ func (a *App) viewChoiceOverlay(base string) string {
 	return strings.Join(lines, "\n")
 }
 
-// hoverHandle 在鼠标悬停的分隔条位置绘制拖动手柄。
-func hoverHandle(body string, x, y, div int) string {
-	lines := strings.Split(body, "\n")
-	if y < 0 || y >= len(lines) {
-		return body
+// dividerHighlight 高亮整条可拖动的分隔线：hover 强调色，拖动中绿色粗线。
+func (a *App) dividerHighlight(body string, div int, dragging bool) string {
+	lines := strings.Split(body, string(rune(10)))
+	style := styleAccent.Bold(true)
+	if dragging {
+		style = styleGood.Bold(true)
 	}
-	glyph := "┃"
-	// 2/4/5/6 是横向分隔线，手柄用横线；1/3 是纵向分隔线。
-	if div == 2 || div == 4 || div == 5 || div == 6 {
-		glyph = "━"
+	hl := func(n int) string { return style.Render(strings.Repeat("━", n)) }
+	replaceRow := func(row, x0, w int) {
+		if row < 0 || row >= len(lines) || w <= 0 {
+			return
+		}
+		lines[row] = strings.Repeat(" ", x0) + hl(w) + strings.Repeat(" ", a.width-x0-w)
 	}
-	line := lines[y]
-	// 用显示列精确切片，避免 ANSI 转义导致整行重复
-	left := ansi.Cut(line, 0, x)
-	after := ansi.Cut(line, x+1, strWidth(line))
-	lines[y] = padRight(left, x) + styleAccent.Bold(true).Render(glyph) + after
-	return strings.Join(lines, "\n")
+	replaceCol := func(col, y0, y1 int) {
+		if col < 0 || col >= a.width {
+			return
+		}
+		for y := y0; y < y1 && y < len(lines); y++ {
+			plain := ansi.Strip(lines[y])
+			left := runewidth.Truncate(plain, col, "")
+			left += strings.Repeat(" ", maxInt(0, col-runewidth.StringWidth(left)))
+			tail, _ := stripColumnPrefix(plain, col+1)
+			lines[y] = truncate(left+style.Render("┃")+tail, a.width)
+		}
+	}
+	l := a.panelLayout()
+	switch div {
+	case 1: // 左右分栏
+		replaceCol(l.leftW, 0, l.bodyH)
+	case 3: // 文件/内容
+		replaceCol(l.leftW+1+a.drawerSplit(l.rightW), l.rightTopH, l.rightTopH+l.drawerH)
+	case 4: // 分支/改动
+		replaceRow(l.leftTopH, 0, l.leftW)
+	case 6: // 改动/提交信息
+		replaceRow(l.leftTopH+l.leftMidH, 0, l.leftW)
+	case 2: // 提交/抽屉
+		replaceRow(l.rightTopH, l.leftW+1, l.rightW)
+	case 5: // 抽屉/命令
+		replaceRow(l.rightTopH+l.drawerH, l.leftW+1, l.rightW)
+	}
+	return strings.Join(lines, string(rune(10)))
 }
 
 func strWidth(s string) int { return ansi.StringWidth(s) }
@@ -951,6 +982,22 @@ func (a *App) contextHints() string {
 	}
 	if a.width < 80 {
 		return "j/k ⏎ c p/P f / b ? q"
+	}
+	if a.dragMode != 0 {
+		switch a.dragMode {
+		case 1:
+			return fmt.Sprintf(i18n.S("拖动中：左栏 %d 列", "dragging: left %d cols"), a.panelLayout().leftW)
+		case 4:
+			return fmt.Sprintf(i18n.S("拖动中：分支区 %d 行", "dragging: branches %d rows"), a.panelLayout().leftTopH)
+		case 6:
+			return fmt.Sprintf(i18n.S("拖动中：改动区 %d 行", "dragging: changes %d rows"), a.panelLayout().leftMidH)
+		case 2:
+			return fmt.Sprintf(i18n.S("拖动中：提交区 %d 行", "dragging: commits %d rows"), a.panelLayout().rightTopH)
+		case 5:
+			return fmt.Sprintf(i18n.S("拖动中：命令区 %d 行", "dragging: commands %d rows"), a.panelLayout().cmdH)
+		case 3:
+			return fmt.Sprintf(i18n.S("拖动中：文件列 %d 列", "dragging: files %d cols"), a.drawerSplit(a.panelLayout().rightW))
+		}
 	}
 	if a.hoverDiv != 0 {
 		return i18n.S("拖动调整大小（双击复位）", "drag to resize (double-click resets)")
