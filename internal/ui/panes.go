@@ -27,14 +27,13 @@ func (a *App) paneBoxes() []paneBox {
 	rx := l.leftW + 1
 	boxes := []paneBox{
 		{PaneBranches, 0, 0, l.leftW, l.leftTopH},
-		{PaneChanges, 0, l.leftTopH, l.leftW, l.leftMidH},
-		{PaneInfo, 0, l.leftTopH + l.leftMidH, l.leftW, l.leftBotH},
+		{PaneInfo, 0, l.leftTopH + 1, l.leftW, l.leftBotH},
 		{PaneCommits, rx, 0, l.rightW, l.rightTopH},
-		{PaneFiles, rx, l.rightTopH, fw, l.drawerH},
-		{PaneContent, rx + fw + 1, l.rightTopH, l.rightW - fw - 1, l.drawerH},
+		{PaneFiles, rx, l.rightTopH + 1, fw, l.drawerH},
+		{PaneContent, rx + fw + 1, l.rightTopH + 1, l.rightW - fw - 1, l.drawerH},
 	}
 	if l.cmdH > 0 {
-		boxes = append(boxes, paneBox{PaneLog, rx, l.rightTopH + l.drawerH, l.rightW, l.cmdH})
+		boxes = append(boxes, paneBox{PaneLog, rx, l.rightTopH + 1 + l.drawerH + 1, l.rightW, l.cmdH})
 	}
 	return boxes
 }
@@ -85,11 +84,6 @@ func (a *App) paneInfo(p Pane) string {
 			return "0 of 0"
 		}
 		return fmt.Sprintf("%d of %d", a.sideSel+1, len(a.sideItems))
-	case PaneChanges:
-		if len(a.changesRows) == 0 {
-			return "0 of 0"
-		}
-		return fmt.Sprintf("%d of %d", a.changeSel+1, len(a.changesRows))
 	case PaneInfo:
 		total := len(a.infoLines(maxInt(10, a.panelLayout().leftW-2)))
 		if total == 0 {

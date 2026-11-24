@@ -19,10 +19,6 @@ func TestAltFocusNavigation(t *testing.T) {
 		t.Errorf("Alt+Left => %v", a.pane)
 	}
 	a.altFocus("down")
-	if a.pane != PaneChanges {
-		t.Errorf("Alt+Down => %v", a.pane)
-	}
-	a.altFocus("down")
 	if a.pane != PaneInfo {
 		t.Errorf("Alt+Down 第二次 => %v", a.pane)
 	}
@@ -152,7 +148,7 @@ func TestTriPaneAndInfoPanel(t *testing.T) {
 	// 文件列表加载会回填 detail.Body，这里在加载后注入长正文验证 INFO 自动换行。
 	a.commitBody = "第一段提交正文，包含比较长的中文内容用于验证自动换行是否正确。\n第二段正文。"
 	v := plainView(a)
-	for _, want := range []string{"分支", "改动", "提交信息", "提交", "命令日志"} {
+	for _, want := range []string{"分支", "提交信息", "提交", "命令日志"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("三分区布局缺少 %q:\n%s", want, v)
 		}
@@ -167,12 +163,15 @@ func TestSevenPaneCycle(t *testing.T) {
 	a.commands = []commandEntry{{at: time.Now(), line: "git status"}}
 	a.pane = PaneBranches
 	seen := map[Pane]bool{}
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 6; i++ {
 		seen[a.pane] = true
 		a.nextPane(1)
 	}
-	if len(seen) != 7 {
-		t.Errorf("Tab 循环覆盖 %d 个区域，期望 7", len(seen))
+	if len(seen) != 6 {
+		t.Errorf("Tab 循环覆盖 %d 个区域，期望 6", len(seen))
+	}
+	if seen[PaneChanges] {
+		t.Error("已移除的改动区不应进入 Tab 循环")
 	}
 }
 
@@ -193,10 +192,10 @@ func TestBranchSortByTipTime(t *testing.T) {
 func TestCommitBranchColors(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.rebuildCommitColors()
-	if a.commitColor["aaaaaaaaaaaa1111"] != colorIndexForRef("main") {
+	if a.commitColor["aaaaaaaaaaaa1111"] != a.refColorIndex(git.RefLocal, "main") {
 		t.Errorf("tip 颜色错误: %v", a.commitColor)
 	}
-	if a.commitColor["bbbbbbbbbbbb2222"] != colorIndexForRef("feature/x") {
+	if a.commitColor["bbbbbbbbbbbb2222"] != a.refColorIndex(git.RefLocal, "feature/x") {
 		t.Errorf("feature tip 颜色错误: %v", a.commitColor)
 	}
 	// 父提交继承最近分支颜色
@@ -367,8 +366,8 @@ func TestAltRightFilesToContent(t *testing.T) {
 		t.Errorf("内容区 Alt+Left = %v, 期望文件区", a.pane)
 	}
 	a.altFocus("left")
-	if a.pane != PaneChanges {
-		t.Errorf("文件区再次 Alt+Left = %v, 期望改动区", a.pane)
+	if a.pane != PaneBranches {
+		t.Errorf("文件区再次 Alt+Left = %v, 期望分支区", a.pane)
 	}
 }
 
@@ -413,14 +412,15 @@ func TestCommitInfoOrder(t *testing.T) {
 	a.commitBody = "正文"
 	lines := a.infoLines(60)
 	joined := strings.Join(lines, string(rune(10)))
-	hashIdx := strings.Index(joined, "commit ")
-	timeIdx := strings.Index(joined, "24 Nov 2026")
+	hashIdx := strings.Index(joined, "Commit")
+	authorIdx := strings.Index(joined, "Author")
+	timeIdx := strings.Index(joined, "Date")
 	subjIdx := strings.Index(joined, "支持摄像头分辨率")
-	if hashIdx < 0 || timeIdx < 0 || subjIdx < 0 {
+	if hashIdx < 0 || authorIdx < 0 || timeIdx < 0 || subjIdx < 0 {
 		t.Fatalf("信息缺失: %q", joined)
 	}
-	if !(hashIdx < timeIdx && timeIdx < subjIdx) {
-		t.Errorf("顺序应为 hash -> 时间 -> 标题，实际 %d/%d/%d", hashIdx, timeIdx, subjIdx)
+	if !(hashIdx < authorIdx && authorIdx < timeIdx && timeIdx < subjIdx) {
+		t.Errorf("顺序应为 Commit -> Author -> Date -> 标题，实际 %d/%d/%d/%d", hashIdx, authorIdx, timeIdx, subjIdx)
 	}
 }
 
