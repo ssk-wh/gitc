@@ -13,7 +13,33 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Ensure release exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --title "gitc $RELEASE_TAG" --notes "gitc $RELEASE_TAG"
+      - name: Prefer master branch
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          # 尽力把默认分支改为 master；GITHUB_TOKEN 无 admin 权限时会失败，忽略即可
+          gh api -X PATCH "repos/$GH_REPO" -f default_branch=master >/dev/null 2>&1 || echo "默认分支切换需要仓库管理员在网页设置中完成"
+          def="$(gh api "repos/$GH_REPO" --jq .default_branch 2>/dev/null || true)"
+          if [ "$def" = "master" ]; then
+            gh api -X DELETE "repos/$GH_REPO/git/refs/heads/main" >/dev/null 2>&1 || true
+            echo "已删除远端 main 分支"
+          fi
+
   build:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:

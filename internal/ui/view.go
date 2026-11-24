@@ -479,6 +479,24 @@ func (a *App) infoLinesWith(width int, add func([]string, string, lipgloss.Style
 	var out []string
 	out = add(out, c.Short+i18n.S("  分支 ", "  branch ")+sanitize.Line(a.status.Branch), styleBold)
 	out = add(out, "commit "+c.Hash, styleDim)
+	var refNames []string
+	for _, r := range a.refsAt(c.Hash) {
+		switch r.Kind {
+		case "local":
+			name := sanitize.Line(r.Name)
+			if r.Head {
+				name = "*" + name
+			}
+			refNames = append(refNames, name)
+		case "remote":
+			refNames = append(refNames, sanitize.Line(r.Name))
+		case "tag":
+			refNames = append(refNames, "tag:"+sanitize.Line(r.Name))
+		}
+	}
+	if len(refNames) > 0 {
+		out = add(out, strings.Join(refNames, "  "), styleMagenta)
+	}
 	author := sanitize.Line(c.Author)
 	if a.commitAuthor != "" {
 		author = sanitize.Line(a.commitAuthor)

@@ -1,9 +1,18 @@
-# gitc 一键安装（Windows）
+﻿# gitc 一键安装（Windows）
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/ssk-wh/gitc/master/install.ps1 | iex"
 $ErrorActionPreference = 'Stop'
 
 $Repo = if ($env:GITC_REPO) { $env:GITC_REPO } else { 'ssk-wh/gitc' }
 $BinDir = if ($env:GITC_INSTALL_DIR) { $env:GITC_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'gitc\bin' }
+$Version = if ($env:GITC_VERSION) { $env:GITC_VERSION } else { $null }
+function Download-Url([string]$url, [string]$dest) {
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $dest
+    } catch {
+        $mirror = if ($env:GITC_MIRROR) { $env:GITC_MIRROR } else { 'https://gh-proxy.com/' }
+        Invoke-WebRequest -UseBasicParsing -Uri ($mirror + $url) -OutFile $dest
+    }
+}
 $Arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     'AMD64' { 'amd64' }
     'ARM64' { 'arm64' }
@@ -15,7 +24,7 @@ function Install-Binary([string]$src) {
     $dest = Join-Path $BinDir 'gitc.exe'
     Copy-Item -Force $src $dest
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    if ($userPath -notlike "*$BinDir*") {
+    if ($AddToPath -and $userPath -notlike "*$BinDir*") {
         [Environment]::SetEnvironmentVariable('Path', ($userPath.TrimEnd(';') + ';' + $BinDir), 'User')
         Write-Host "已将 $BinDir 加入用户 PATH（重新打开终端后生效）"
     }
@@ -27,12 +36,19 @@ function Install-Binary([string]$src) {
 $tmp = Join-Path $env:TEMP ('gitc-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 try {
-    Write-Host '查询最新 release…'
     $rel = $null
-    try {
-        $rel = Invoke-RestMethod -Headers @{ 'User-Agent' = 'gitc-installer' } -Uri "https://api.github.com/repos/$Repo/releases/latest"
-    } catch {
-        $rel = $null
+    if ($Version) {
+        $rel = [pscustomobject]@{ tag_name = $Version; assets = @(
+            [pscustomobject]@{ name = "gitc-windows-$Arch.exe"; browser_download_url = "https://github.com/$Repo/releases/download/$Version/gitc-windows-$Arch.exe" },
+            [pscustomobject]@{ name = 'SHA256SUMS'; browser_download_url = "https://github.com/$Repo/releases/download/$Version/SHA256SUMS" }
+        ) }
+    } else {
+        Write-Host '查询最新 release…'
+        try {
+            $rel = Invoke-RestMethod -Headers @{ 'User-Agent' = 'gitc-installer' } -Uri "https://api.github.com/repos/$Repo/releases/latest"
+        } catch {
+            $rel = $null
+        }
     }
 
     if ($rel -and $rel.tag_name) {
@@ -40,11 +56,11 @@ try {
         if ($asset) {
             $file = Join-Path $tmp 'gitc.exe'
             Write-Host "下载 $($asset.name) ($($rel.tag_name))…"
-            Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $file
+            Download-Url $asset.browser_download_url $file
             $sumAsset = $rel.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
             if ($sumAsset) {
                 $sumFile = Join-Path $tmp 'SHA256SUMS'
-                Invoke-WebRequest -UseBasicParsing -Uri $sumAsset.browser_download_url -OutFile $sumFile
+                Download-Url $sumAsset.browser_download_url $sumFile
                 $line = Get-Content $sumFile | Where-Object { $_ -match [regex]::Escape("gitc-windows-$Arch.exe") } | Select-Object -First 1
                 if ($line) {
                     $expected = ($line -split '\s+')[0].ToLower()

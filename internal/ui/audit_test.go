@@ -439,3 +439,14 @@ func TestFileTreeOnlyBasename(t *testing.T) {
 	}
 	t.Fatal("未找到文件行")
 }
+
+func TestCommitInfoShowsTags(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pane = PaneCommits
+	a.graphSel = a.dirtyOffset() + 2 // 初始提交，带 v1.0 tag
+	pump(t, a, a.loadFilesForSelection())
+	joined := strings.Join(a.infoLines(80), string(rune(10)))
+	if !strings.Contains(joined, "tag:v1.0") {
+		t.Errorf("提交信息应显示 tag: %q", joined)
+	}
+}
