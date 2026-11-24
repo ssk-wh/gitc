@@ -1,0 +1,18 @@
+# 构建产物
+/dist/
+/build/gitc
+*.exe
+*.test
+*.out
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 临时
+tmp/
+
+# Windows bash 崩溃转储
+bash.exe.stackdump
