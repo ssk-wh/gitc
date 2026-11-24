@@ -6,6 +6,14 @@
 - **好用**：右键菜单浮在当前界面之上（支持 hover/点击）；分支/当天提交/HEAD 有明显标记；命令历史只记录你主动触发的操作；内置多套主题并支持自定义语义色。
 - **跨平台**：Windows / macOS / Linux，仅依赖系统 `git`（>= 2.23）。
 
+## 界面预览
+
+![gitc 主界面](docs/images/gitc-main.png)
+
+提交右键菜单、行内搜索、提交详情、复制提示：
+
+![gitc 交互演示](docs/images/gitc-demo.gif)
+
 ## 安装（一条命令，自动配置 PATH）
 
 Linux / macOS：
@@ -20,7 +28,7 @@ Windows（PowerShell）：
 powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/ssk-wh/gitc/master/install.ps1 | iex"
 ```
 
-脚本会从 GitHub Releases 下载对应平台二进制（优先）或从源码构建，校验 SHA256，安装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\gitcin`）并写入 PATH。
+脚本会从 GitHub Releases 下载对应平台二进制（优先）或从源码构建，校验 SHA256，安装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\gitc\bin`）并写入 PATH。
 
 其他方式：
 

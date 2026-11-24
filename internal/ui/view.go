@@ -30,12 +30,16 @@ func (a *App) finalizeView(s string) string {
 		lines = lines[:a.height]
 	}
 	for i, l := range lines {
-		if strWidth(l) > a.width {
+		w := strWidth(l)
+		if w > a.width {
 			lines[i] = ansi.Truncate(l, a.width, "")
+		} else if w < a.width {
+			// 短行必须补满宽度，否则终端会残留上一帧的内容
+			lines[i] = padRight(l, a.width)
 		}
 	}
 	for len(lines) < a.height {
-		lines = append(lines, "")
+		lines = append(lines, strings.Repeat(" ", a.width))
 	}
 	return strings.Join(lines, string(rune(10)))
 }
@@ -1031,9 +1035,30 @@ func (a *App) viewFooter() string {
 		msg = styleAccent.Render(fmt.Sprintf(i18n.S("全历史搜索: %s（%d 条，Esc 退出）", "history search: %s (%d, Esc to exit)"), a.searchQuery, len(a.searchResults)))
 	}
 	hints := styleDim.Render(a.contextHints())
-	line := a.viewHeader() + styleDim.Render("  ·  ")
+	sep := styleDim.Render("  ·  ")
+	head := a.viewHeader()
+	// 消息过长时优先压缩消息，保证右侧快捷键提示可见
 	if msg != "" {
-		line += msg + styleDim.Render("  ·  ")
+		// 给快捷键提示预留空间（最多 30 列），空间不足时先压缩消息
+		budget := strWidth(hints)
+		if budget > 30 {
+			budget = 30
+		}
+		cap := a.width - strWidth(head) - strWidth(sep)*2 - budget
+		if cap < 8 {
+			cap = 8
+		}
+		if strWidth(msg) > cap {
+			msg = truncate(msg, cap)
+		}
+		// 剩余空间仍不够时截短提示，而不是直接丢弃
+		if avail := a.width - strWidth(head) - strWidth(sep)*2 - strWidth(msg); avail < strWidth(hints) {
+			hints = truncate(hints, maxInt(0, avail))
+		}
+	}
+	line := head + sep
+	if msg != "" {
+		line += msg + sep
 	}
 	line += hints
 	return truncate(line, a.width)
