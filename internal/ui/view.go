@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -30,12 +31,16 @@ func (a *App) finalizeView(s string) string {
 		lines = lines[:a.height]
 	}
 	for i, l := range lines {
-		if strWidth(l) > a.width {
+		w := strWidth(l)
+		if w > a.width {
 			lines[i] = ansi.Truncate(l, a.width, "")
+		} else if w < a.width {
+			// 短行必须补满宽度，否则终端会残留上一帧的内容
+			lines[i] = padRight(l, a.width)
 		}
 	}
 	for len(lines) < a.height {
-		lines = append(lines, "")
+		lines = append(lines, strings.Repeat(" ", a.width))
 	}
 	return strings.Join(lines, string(rune(10)))
 }
@@ -134,7 +139,7 @@ func (a *App) dividerHighlight(body string, div int, dragging bool) string {
 		style = styleGood.Bold(true)
 	}
 	l := a.panelLayout()
-	horiz := div == 2 || div == 4 || div == 5 || div == 6
+	horiz := div == 2 || div == 4 || div == 5
 	ch := "║"
 	if horiz {
 		ch = "═"
@@ -147,17 +152,15 @@ func (a *App) dividerHighlight(body string, div int, dragging bool) string {
 				lines[y] = replaceColumn(lines[y], l.leftW, style.Render(ch), a.width)
 			}
 		case 3:
-			for y := l.rightTopH; y < l.rightTopH+l.drawerH && y < len(lines); y++ {
+			for y := l.rightTopH + 1; y < l.rightTopH+1+l.drawerH && y < len(lines); y++ {
 				lines[y] = replaceColumn(lines[y], l.leftW+1+a.drawerSplit(l.rightW), style.Render(ch), a.width)
 			}
 		case 4:
 			lines = replaceRowSegment(lines, l.leftTopH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
-		case 6:
-			lines = replaceRowSegment(lines, l.leftTopH+l.leftMidH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
 		case 2:
 			lines = replaceRowSegment(lines, l.rightTopH, l.leftW+1, l.rightW, style.Render(strings.Repeat(ch, l.rightW)), a.width)
 		case 5:
-			lines = replaceRowSegment(lines, l.rightTopH+l.drawerH, l.leftW+1, l.rightW, style.Render(strings.Repeat(ch, l.rightW)), a.width)
+			lines = replaceRowSegment(lines, l.rightTopH+1+l.drawerH, l.leftW+1, l.rightW, style.Render(strings.Repeat(ch, l.rightW)), a.width)
 		}
 		return strings.Join(lines, string(rune(10)))
 	}
@@ -356,7 +359,7 @@ func (a *App) viewBranchesPanel(width, height int) string {
 		name := strings.TrimLeft(it.label, " ")
 		switch it.kind {
 		case sideBranch, sideRemote:
-			col := colorForRef(it.ref.Name)
+			col := a.refColor(it.ref.Kind, it.ref.Name)
 			if it.ref.Head {
 				style = lipgloss.NewStyle().Foreground(colorGood).Bold(true)
 			} else if ln.itemIdx != a.sideSel {
@@ -477,8 +480,14 @@ func (a *App) infoLinesWith(width int, add func([]string, string, lipgloss.Style
 		return add(nil, i18n.S("（没有选中的提交）", "(no commit selected)"), styleDim)
 	}
 	var out []string
-	out = add(out, c.Short+i18n.S("  分支 ", "  branch ")+sanitize.Line(a.status.Branch), styleBold)
-	out = add(out, "commit "+c.Hash, styleDim)
+	// 头部固定三行两列对齐：Commit / Author / Date
+	out = add(out, fmt.Sprintf("%-8s%s", "Commit", c.Short), styleBold)
+	author := sanitize.Line(c.Author)
+	if a.commitAuthor != "" {
+		author = sanitize.Line(a.commitAuthor)
+	}
+	out = add(out, fmt.Sprintf("%-8s%s", "Author", author), styleBold)
+	out = add(out, fmt.Sprintf("%-8s%s", "Date", c.When.Format("02 Jan 2006 15:04")), styleBold)
 	var refNames []string
 	for _, r := range a.refsAt(c.Hash) {
 		switch r.Kind {
@@ -494,14 +503,23 @@ func (a *App) infoLinesWith(width int, add func([]string, string, lipgloss.Style
 			refNames = append(refNames, "tag:"+sanitize.Line(r.Name))
 		}
 	}
-	if len(refNames) > 0 {
-		out = add(out, strings.Join(refNames, "  "), styleMagenta)
+	// 按引用名整体换行，避免把 origin/master 从中间截断
+	line := ""
+	for _, n := range refNames {
+		if line == "" {
+			line = n
+			continue
+		}
+		if strWidth(line)+2+strWidth(n) > width {
+			out = add(out, line, styleMagenta)
+			line = n
+		} else {
+			line += "  " + n
+		}
 	}
-	author := sanitize.Line(c.Author)
-	if a.commitAuthor != "" {
-		author = sanitize.Line(a.commitAuthor)
+	if line != "" {
+		out = add(out, line, styleMagenta)
 	}
-	out = add(out, c.When.Format("02 Jan 2006 15:04")+i18n.S("  ·  ", "  ·  ")+author, styleDim)
 	out = append(out, "")
 	out = add(out, sanitize.Line(c.Subject), styleAccent)
 	if body := strings.TrimSpace(sanitize.Text(a.commitBody)); body != "" {
@@ -867,8 +885,8 @@ func (a *App) renderRow(row int, layout *graph.Layout, vc []git.Commit, width in
 
 	// 引用徽标
 	refs := a.refsAt(c.Hash)
-	if len(refs) > 3 {
-		refs = refs[:3]
+	if len(refs) > 4 {
+		refs = refs[:4]
 	}
 	var badgeStyled strings.Builder
 	badgeWidth := 0
@@ -884,13 +902,13 @@ func (a *App) renderRow(row int, layout *graph.Layout, vc []git.Commit, width in
 		}
 		txt := "[" + name + "]"
 		w := strWidth(txt)
-		if badgeWidth+w+1 > 30 {
+		if badgeWidth+w+1 > 36 {
 			break
 		}
 		badgeWidth += w + 1
 		style := refStyle(r.Kind)
 		if r.Kind == git.RefLocal || r.Kind == git.RefRemote {
-			style = lipgloss.NewStyle().Foreground(colorForRef(r.Name))
+			style = lipgloss.NewStyle().Foreground(a.refColor(r.Kind, r.Name))
 		}
 		badgeStyled.WriteString(style.Render(txt) + " ")
 	}
@@ -1031,9 +1049,30 @@ func (a *App) viewFooter() string {
 		msg = styleAccent.Render(fmt.Sprintf(i18n.S("全历史搜索: %s（%d 条，Esc 退出）", "history search: %s (%d, Esc to exit)"), a.searchQuery, len(a.searchResults)))
 	}
 	hints := styleDim.Render(a.contextHints())
-	line := a.viewHeader() + styleDim.Render("  ·  ")
+	sep := styleDim.Render("  ·  ")
+	head := a.viewHeader()
+	// 消息过长时优先压缩消息，保证右侧快捷键提示可见
 	if msg != "" {
-		line += msg + styleDim.Render("  ·  ")
+		// 给快捷键提示预留空间（最多 30 列），空间不足时先压缩消息
+		budget := strWidth(hints)
+		if budget > 30 {
+			budget = 30
+		}
+		cap := a.width - strWidth(head) - strWidth(sep)*2 - budget
+		if cap < 8 {
+			cap = 8
+		}
+		if strWidth(msg) > cap {
+			msg = truncate(msg, cap)
+		}
+		// 剩余空间仍不够时截短提示，而不是直接丢弃
+		if avail := a.width - strWidth(head) - strWidth(sep)*2 - strWidth(msg); avail < strWidth(hints) {
+			hints = truncate(hints, maxInt(0, avail))
+		}
+	}
+	line := head + sep
+	if msg != "" {
+		line += msg + sep
 	}
 	line += hints
 	return truncate(line, a.width)
@@ -1044,7 +1083,7 @@ func (a *App) contextHints() string {
 		return i18n.S("⏎ 确认  esc 取消", "⏎ confirm  esc cancel")
 	}
 	if a.width < 80 {
-		return "j/k ⏎ c p/P f / b ? q"
+		return "↑↓ ⏎ c p/P f / b ? q"
 	}
 	if a.dragMode != 0 {
 		switch a.dragMode {
@@ -1052,8 +1091,6 @@ func (a *App) contextHints() string {
 			return fmt.Sprintf(i18n.S("拖动中：左栏 %d 列", "dragging: left %d cols"), a.panelLayout().leftW)
 		case 4:
 			return fmt.Sprintf(i18n.S("拖动中：分支区 %d 行", "dragging: branches %d rows"), a.panelLayout().leftTopH)
-		case 6:
-			return fmt.Sprintf(i18n.S("拖动中：改动区 %d 行", "dragging: changes %d rows"), a.panelLayout().leftMidH)
 		case 2:
 			return fmt.Sprintf(i18n.S("拖动中：提交区 %d 行", "dragging: commits %d rows"), a.panelLayout().rightTopH)
 		case 5:
@@ -1180,8 +1217,8 @@ func (a *App) viewDetailOverlay() string {
 		b.WriteString(colorizeDiffLine(ln, a.width))
 		b.WriteByte('\n')
 	}
-	b.WriteString(styleDim.Render(i18n.S("j/k 滚动  esc 返回", "j/k scroll  esc back")))
-	return b.String()
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  esc 返回", "↑/↓ scroll  esc back")))
+	return a.withOverlayScrollbar(b.String(), len(lines), off, viewH)
 }
 
 // colorizeDiffLine 为 diff/详情行着色。
@@ -1219,13 +1256,13 @@ func (a *App) viewHelp() string {
 		b.WriteString(truncate(ln, a.width))
 		b.WriteByte('\n')
 	}
-	b.WriteString(styleDim.Render(i18n.S("j/k 滚动  esc 返回", "j/k scroll  esc back")))
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  esc 返回", "↑/↓ scroll  esc back")))
 	return b.String()
 }
 
 func helpLines() []string {
 	rows := [][2]string{
-		{"↑↓ / j k", i18n.S("当前区选择/滚动；内容区优先用方向键（中文输入法下 j/k 可能被吞）", "select/scroll; prefer arrows in content with CJK IME")},
+		{"↑↓", i18n.S("当前区选择/滚动；内容区方向键上下翻页", "select/scroll in current pane")},
 		{"PgUp / PgDn", i18n.S("翻页（内容区整页滚动）", "page up/down (full page in content)")},
 		{"Tab / ←→", i18n.S("按顺序切换 7 个区域", "cycle 7 panes")},
 		{"Alt+方向键", i18n.S("按空间位置切换区域（左3/右4）", "spatial focus across panes")},
@@ -1279,8 +1316,27 @@ func (a *App) viewLog() string {
 		b.WriteString(truncate(ln, a.width))
 		b.WriteByte('\n')
 	}
-	b.WriteString(styleDim.Render(i18n.S("j/k 滚动  esc 返回", "j/k scroll  esc back")))
-	return b.String()
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  esc 返回", "↑/↓ scroll  esc back")))
+	return a.withOverlayScrollbar(b.String(), len(a.logs), off, viewH)
+}
+
+// withOverlayScrollbar 为全屏浮层绘制右侧滚动条。
+func (a *App) withOverlayScrollbar(s string, total, off, visible int) string {
+	lines := strings.Split(s, string(rune(10)))
+	start, thumb, ok := scrollThumb(off, total, visible, visible)
+	if !ok {
+		return s
+	}
+	for i := range lines {
+		lines[i] = padRight(lines[i], a.width)
+	}
+	for i := 0; i < thumb; i++ {
+		idx := 1 + start + i
+		if idx < len(lines) {
+			lines[idx] = replaceCellStyled(lines[idx], a.width-1, styleAccent.Render("┃"))
+		}
+	}
+	return strings.Join(lines, string(rune(10)))
 }
 
 // viewModal 渲染模态框。
@@ -1326,7 +1382,7 @@ func (a *App) viewModal() string {
 			body.WriteString(style.Render(truncate(line, w-4)))
 			body.WriteString("\n")
 		}
-		body.WriteString("\n" + styleDim.Render(i18n.S("j/k 选择  ⏎ 确认  esc 取消", "j/k select  ⏎ confirm  esc cancel")))
+		body.WriteString("\n" + styleDim.Render(i18n.S("↑↓ 选择  ⏎ 确认  esc 取消", "↑↓ select  ⏎ confirm  esc cancel")))
 	case modalInput:
 		body.WriteString(m.input.View())
 		body.WriteString("\n\n" + styleDim.Render(i18n.S("⏎ 确认  esc 取消", "⏎ confirm  esc cancel")))
@@ -1393,4 +1449,74 @@ func stripColumnPrefix(s string, cols int) (string, int) {
 		removed += rw
 	}
 	return "", removed
+}
+
+// replaceCellStyled 替换第 col 个显示列上的字符，保留其余 ANSI 样式与宽度。
+func replaceCellStyled(s string, col int, seg string) string {
+	if col < 0 {
+		return s
+	}
+	var b strings.Builder
+	w := 0
+	done := false
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			j := i + 1
+			if j < len(s) && s[j] == '[' {
+				j++
+				for j < len(s) && !(s[j] >= 0x40 && s[j] <= 0x7e) {
+					j++
+				}
+				if j < len(s) {
+					j++
+				}
+			} else {
+				j++
+			}
+			b.WriteString(s[i:j])
+			i = j
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		cw := runewidth.RuneWidth(r)
+		if !done && w == col {
+			b.WriteString(seg)
+			done = true
+			i += size
+			w += cw
+			continue
+		}
+		b.WriteString(s[i : i+size])
+		w += cw
+		i += size
+	}
+	if !done {
+		b.WriteString(seg)
+	}
+	return b.String()
+}
+
+// scrollThumb 返回滑块在 rows 行视口中的起始行与高度。
+func scrollThumb(off, total, visible, rows int) (int, int, bool) {
+	if total <= visible || visible <= 0 || rows <= 0 {
+		return 0, 0, false
+	}
+	thumb := rows * visible / total
+	if thumb < 1 {
+		thumb = 1
+	}
+	if thumb > rows {
+		thumb = rows
+	}
+	start := 0
+	if maxOff := total - visible; maxOff > 0 {
+		start = off * (rows - thumb) / maxOff
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start+thumb > rows {
+		start = rows - thumb
+	}
+	return start, thumb, true
 }

@@ -153,7 +153,7 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 				return nil
 			}},
 			{label: i18n.S("复制分支名", "copy branch name"), action: func(a *App) tea.Cmd {
-				return copyText(ref.Name)
+				return a.copyToClipboard(ref.Name)
 			}},
 		}
 	case sideRemote:
@@ -174,7 +174,7 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 				return a.sidebarDelete(&sideItem{kind: sideRemote, ref: ref})
 			}},
 			{label: i18n.S("复制名称", "copy name"), action: func(a *App) tea.Cmd {
-				return copyText(ref.Name)
+				return a.copyToClipboard(ref.Name)
 			}},
 		}
 	case sideTag:
@@ -191,7 +191,7 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 				return a.sidebarDelete(&sideItem{kind: sideTag, ref: ref})
 			}},
 			{label: i18n.S("复制名称", "copy name"), action: func(a *App) tea.Cmd {
-				return copyText(ref.Name)
+				return a.copyToClipboard(ref.Name)
 			}},
 		}
 	case sideStash:
@@ -259,11 +259,10 @@ func (a *App) commitMenuChoices(c *git.Commit) []choice {
 			return nil
 		}},
 		{label: i18n.S("复制完整 sha", "copy sha"), action: func(a *App) tea.Cmd {
-			a.setToast(i18n.S("已复制 "+c.Short, "copied "+c.Short), false)
-			return copyText(c.Hash)
+			return a.copyToClipboard(c.Hash)
 		}},
 		{label: i18n.S("复制提交信息", "copy message"), action: func(a *App) tea.Cmd {
-			return copyText(c.Subject)
+			return a.copyToClipboard(c.Subject)
 		}},
 	}
 	return out
@@ -453,7 +452,7 @@ func (a *App) dirMenuChoices(n *fileNode, working bool) []choice {
 			return nil
 		}},
 		{label: i18n.S("复制目录路径", "copy path"), action: func(a *App) tea.Cmd {
-			return copyText(n.path)
+			return a.copyToClipboard(n.path)
 		}},
 	}
 	if !working {
@@ -560,7 +559,7 @@ func (a *App) openContentHeaderMenu() {
 			return nil
 		}},
 		{label: i18n.S("复制全部内容", "copy all content"), action: func(a *App) tea.Cmd {
-			return copyText(strings.Join(a.content.lines, "\n"))
+			return a.copyToClipboard(strings.Join(a.content.lines, "\n"))
 		}},
 	})
 }
@@ -633,7 +632,7 @@ func (a *App) openCommandsHeaderMenu() {
 			for _, e := range a.commands {
 				lines = append(lines, e.at.Format("15:04:05")+"  "+e.line)
 			}
-			return copyText(strings.Join(lines, string(rune(10))))
+			return a.copyToClipboard(strings.Join(lines, string(rune(10))))
 		}},
 		{label: i18n.S("清空", "clear"), action: func(a *App) tea.Cmd {
 			a.commands = nil
@@ -667,10 +666,10 @@ func (a *App) openInfoHeaderMenu() {
 		sha := c.Hash
 		choices = append(choices,
 			choice{label: i18n.S("复制提交信息", "copy message"), action: func(a *App) tea.Cmd {
-				return copyText(subject)
+				return a.copyToClipboard(subject)
 			}},
 			choice{label: i18n.S("复制完整 sha", "copy sha"), action: func(a *App) tea.Cmd {
-				return copyText(sha)
+				return a.copyToClipboard(sha)
 			}},
 			choice{label: i18n.S("查看完整详情", "view full details"), action: func(a *App) tea.Cmd {
 				return a.openCommitDetail(sha)

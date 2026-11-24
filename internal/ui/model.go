@@ -178,6 +178,7 @@ type App struct {
 	commitBody   string
 	commitAuthor string
 	commitColor  map[string]int
+	branchColor  map[string]int
 	content      detailModel
 
 	filesGen   int
@@ -270,6 +271,7 @@ func New(svc git.Service) *App {
 		themeName:       "default",
 		expanded:        map[string]bool{},
 		commitColor:     map[string]int{},
+		branchColor:     map[string]int{},
 		changesExpanded: map[string]bool{},
 	}
 	a.layout = a.builder.Layout()
@@ -587,7 +589,11 @@ func buildFileTreeDefault(files []fileEntry, expanded map[string]bool, defaultEx
 	roots := []*fileNode{}
 	dirs := map[string]*fileNode{}
 	for _, fe := range files {
-		path := strings.ReplaceAll(fe.path, "\\", "/")
+		raw := strings.ReplaceAll(fe.path, "\\", "/")
+		if raw == "" || strings.HasSuffix(raw, "/") {
+			continue // 目录占位条目没有文件名，跳过
+		}
+		path := strings.Trim(raw, "/")
 		parts := strings.Split(path, "/")
 		cur := &roots
 		curPath := ""
@@ -688,9 +694,13 @@ func (a *App) rebuildChanges() {
 
 // infoViewHeight 是左下提交信息区可显示行数。
 func (a *App) infoViewHeight() int {
-	h := a.panelLayout().leftBotH - 1
-	if h < 2 {
-		h = 2
+	l := a.panelLayout()
+	h := l.bodyH - 2
+	if l.split {
+		h = l.leftBotH - 2
+	}
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -721,12 +731,12 @@ func (a *App) infoLineCount() int {
 // branchViewHeight 是左侧分支区可显示行数（宽窄屏分别取分支面板高度）。
 func (a *App) branchViewHeight() int {
 	l := a.panelLayout()
-	h := l.bodyH - 1
+	h := l.bodyH - 2
 	if l.split {
-		h = l.leftTopH - 1
+		h = l.leftTopH - 2
 	}
-	if h < 2 {
-		h = 2
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -734,12 +744,12 @@ func (a *App) branchViewHeight() int {
 // changesViewHeight 是左下改动区可显示行数。
 func (a *App) changesViewHeight() int {
 	l := a.panelLayout()
-	h := l.bodyH - 1
+	h := l.bodyH - 2
 	if l.split {
-		h = l.leftMidH - 1
+		h = l.leftMidH - 2
 	}
-	if h < 2 {
-		h = 2
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -901,38 +911,21 @@ func (a *App) panelLayout() panelLayout {
 		return v
 	}
 	top := clampTop(a.rightTopH)
-	// 左侧三分区默认：分支 38% / 改动 30% / 提交信息 剩余
+	// 左侧两分区：分支（默认 38%）+ 提交信息；中间留 1 行空白作为分隔条
 	ltop := a.leftTopH
 	if ltop <= 0 {
-		ltop = bodyH * 38 / 100
+		ltop = bodyH * 45 / 100
 	}
 	if ltop < 6 {
 		ltop = 6
 	}
-	if ltop > bodyH-16 {
-		ltop = bodyH - 16
+	if ltop > bodyH-6 {
+		ltop = bodyH - 6
 	}
-	lmid := a.leftMidH
-	if lmid <= 0 {
-		lmid = bodyH * 30 / 100
-	}
-	if lmid < 6 {
-		lmid = 6
-	}
-	// 保证提交信息区至少 4 行
-	if ltop+lmid+4 > bodyH {
-		lmid = bodyH - ltop - 4
-	}
-	if lmid < 3 {
-		lmid = 3
-	}
-	linfo := bodyH - ltop - lmid
+	linfo := bodyH - ltop - 1
 	if linfo < 4 {
 		linfo = 4
-		lmid = bodyH - ltop - linfo
-		if lmid < 4 {
-			lmid = 4
-		}
+		ltop = bodyH - linfo - 1
 	}
 	bot := bodyH - top
 	cmdH := 0
@@ -951,7 +944,10 @@ func (a *App) panelLayout() panelLayout {
 			cmdH = 2
 		}
 	}
-	drawerH := bot - cmdH
+	drawerH := bot - 1 - cmdH
+	if cmdH > 0 {
+		drawerH--
+	}
 	if drawerH < 3 {
 		drawerH = 3
 	}
@@ -961,7 +957,6 @@ func (a *App) panelLayout() panelLayout {
 		rightW:    a.width - lw - 1,
 		bodyH:     bodyH,
 		leftTopH:  ltop,
-		leftMidH:  lmid,
 		leftBotH:  linfo,
 		rightTopH: top,
 		rightBotH: bot,
@@ -972,16 +967,15 @@ func (a *App) panelLayout() panelLayout {
 
 // commandViewHeight 是命令历史区可显示行数。
 func (a *App) commandViewHeight() int {
-	h := 6
-	if a.panelLayout().split {
-		h = a.panelLayout().cmdH
-	} else {
-		h = 6
+	l := a.panelLayout()
+	h := l.bodyH - 2
+	if l.split && l.cmdH > 0 {
+		h = l.cmdH - 2
 	}
-	if h < 2 {
-		h = 2
+	if h < 1 {
+		h = 1
 	}
-	return h - 1
+	return h
 }
 
 // clampCmdOffset 限制命令历史滚动。
@@ -1019,12 +1013,13 @@ func (a *App) LeftWidth() int { return a.panelLayout().leftW }
 
 // commitViewHeight 是提交区可显示行数（去掉面板标题）。
 func (a *App) commitViewHeight() int {
-	h := a.panelLayout().rightTopH - 1
-	if !a.panelLayout().split {
-		h = a.panelLayout().bodyH - 1
+	l := a.panelLayout()
+	h := l.bodyH - 2
+	if l.split {
+		h = l.rightTopH - 2
 	}
-	if h < 2 {
-		h = 2
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -1047,7 +1042,7 @@ func (a *App) drawerHeight() int {
 
 // drawerBodyHeight 是抽屉内容行数（去掉标题行）。
 func (a *App) drawerBodyHeight() int {
-	h := a.drawerHeight() - 1
+	h := a.drawerHeight() - 2
 	if h < 1 {
 		h = 1
 	}
@@ -1062,26 +1057,38 @@ func (a *App) contentViewHeight() int { return a.drawerBodyHeight() }
 
 // nextPane 循环切换焦点。
 func (a *App) nextPane(delta int) {
-	for i := 0; i < 7; i++ {
-		a.pane = Pane((int(a.pane) + delta + 7) % 7)
-		if a.pane != PaneLog || len(a.commands) > 0 {
+	order := []Pane{PaneBranches, PaneInfo, PaneCommits, PaneFiles, PaneContent, PaneLog}
+	idx := -1
+	for i, p := range order {
+		if p == a.pane {
+			idx = i
 			break
 		}
+	}
+	for i := 0; i < len(order); i++ {
+		if idx < 0 {
+			idx = 0
+		} else {
+			idx = (idx + delta + len(order)) % len(order)
+		}
+		p := order[idx]
+		if p == PaneLog && len(a.commands) == 0 {
+			continue
+		}
+		a.pane = p
+		break
 	}
 	a.ensurePaneVisible()
 }
 
 // altFocus 处理 Alt+方向键的区域切换。
 func (a *App) altFocus(dir string) {
-	left := a.pane == PaneBranches || a.pane == PaneChanges || a.pane == PaneInfo
+	left := a.pane == PaneBranches || a.pane == PaneInfo
 	switch dir {
 	case "up":
 		if left {
-			switch a.pane {
-			case PaneChanges:
+			if a.pane == PaneInfo {
 				a.pane = PaneBranches
-			case PaneInfo:
-				a.pane = PaneChanges
 			}
 		} else {
 			switch a.pane {
@@ -1093,10 +1100,7 @@ func (a *App) altFocus(dir string) {
 		}
 	case "down":
 		if left {
-			switch a.pane {
-			case PaneBranches:
-				a.pane = PaneChanges
-			case PaneChanges:
+			if a.pane == PaneBranches {
 				a.pane = PaneInfo
 			}
 		} else {
@@ -1112,7 +1116,7 @@ func (a *App) altFocus(dir string) {
 		case PaneCommits:
 			a.pane = PaneBranches
 		case PaneFiles:
-			a.pane = PaneChanges
+			a.pane = PaneBranches
 		case PaneContent:
 			a.pane = PaneFiles
 		case PaneLog:
@@ -1122,8 +1126,6 @@ func (a *App) altFocus(dir string) {
 		switch a.pane {
 		case PaneBranches:
 			a.pane = PaneCommits
-		case PaneChanges:
-			a.pane = PaneFiles
 		case PaneFiles:
 			a.pane = PaneContent
 		case PaneInfo:
@@ -1379,9 +1381,9 @@ func refOrder(kind string) int {
 	switch kind {
 	case git.RefLocal:
 		return 0
-	case git.RefRemote:
-		return 1
 	case git.RefTag:
+		return 1
+	case git.RefRemote:
 		return 2
 	case git.RefStash:
 		return 3
