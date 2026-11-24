@@ -76,6 +76,29 @@ func TestMenuBorderWidthsEqual(t *testing.T) {
 	}
 }
 
+// 带分页信息的菜单标题也不能把边框撑宽。
+func TestMenuBorderWidthsEqualPaged(t *testing.T) {
+	a, _ := newFakeApp(t)
+	choices := make([]choice, 0, 50)
+	for i := 0; i < 50; i++ {
+		choices = append(choices, choice{label: "选项"})
+	}
+	a.choose("一个很长很长很长很长很长很长很长的菜单标题用于测试分页", choices)
+	lines, _, _ := a.choiceMenuBox()
+	if len(lines) < 2 {
+		t.Fatal("菜单未渲染")
+	}
+	w := strWidth(lines[0])
+	for i, l := range lines {
+		if strWidth(l) != w {
+			t.Errorf("第 %d 行宽度 %d != %d: %q", i, strWidth(l), w, l)
+		}
+	}
+	if !strings.Contains(lines[0], "/50") {
+		t.Errorf("分页信息缺失: %q", lines[0])
+	}
+}
+
 func TestInlineInputRenderedInFooter(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.prompt("重命名分支", "new-name", "main", nil)
@@ -182,24 +205,25 @@ func TestCommitBranchColors(t *testing.T) {
 	}
 }
 
-func TestHoverHandleNoDuplication(t *testing.T) {
-	line := "\x1b[38;2;61;169;252m中文文本 abc\x1b[0m" + strings.Repeat("x", 20)
-	body := "header\n" + line + "\ntail"
-	out := hoverHandle(body, 9, 1, 2)
+func TestDividerHighlightNoDuplication(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	line := "[38;2;61;169;252m中文文本 abc[0m" + strings.Repeat("x", 20)
+	rows := make([]string, a.bodyHeight())
+	for i := range rows {
+		rows[i] = line
+	}
+	out := a.dividerHighlight(strings.Join(rows, string(rune(10))), 1, false)
 	plainOut := ansi.Strip(out)
-	if strings.Count(plainOut, "中文文本") != 1 {
-		t.Errorf("悬停手柄不应复制文本: %q", plainOut)
+	if strings.Count(plainOut, "中文文本") != len(rows) {
+		t.Errorf("高亮不应复制文本: 出现 %d 次", strings.Count(plainOut, "中文文本"))
 	}
-	if strings.Count(plainOut, "xxxxxxxxxxxxxxxxxxxx") != 1 {
-		t.Errorf("后缀不应复制: %q", plainOut)
-	}
-	inW := strWidth(ansi.Strip(body))
-	outW := strWidth(ansi.Strip(out))
-	if inW != outW {
-		t.Errorf("悬停后宽度变化: %d -> %d", inW, outW)
+	for i, l := range strings.Split(plainOut, string(rune(10))) {
+		if w := strWidth(l); w > a.width {
+			t.Errorf("第 %d 行宽 %d > %d", i, w, a.width)
+		}
 	}
 }
-
 func TestHoverAndClicksNoCorruption(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.Update(tea.WindowSizeMsg{Width: 160, Height: 46})
@@ -345,5 +369,38 @@ func TestAltRightFilesToContent(t *testing.T) {
 	a.altFocus("left")
 	if a.pane != PaneChanges {
 		t.Errorf("文件区再次 Alt+Left = %v, 期望改动区", a.pane)
+	}
+}
+
+func TestDividerHoverAndDragHighlight(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	l := a.panelLayout()
+	// hover 竖分隔线：整列 ┃ + 提示
+	a.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: l.leftW, Y: 5})
+	if a.hoverDiv != 1 {
+		t.Fatalf("hoverDiv = %d", a.hoverDiv)
+	}
+	v := plainView(a)
+	if !strings.Contains(v, "┃") || !strings.Contains(v, "拖动调整大小") {
+		t.Errorf("hover 分隔线未高亮或缺少提示")
+	}
+	// 拖动：底栏显示尺寸
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.leftW, Y: 5})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: l.leftW + 2, Y: 5})
+	v = plainView(a)
+	if !strings.Contains(v, "拖动中：左栏") {
+		t.Errorf("拖动时缺少尺寸提示")
+	}
+	// hover 横分隔线：整行 ━
+	a.dragMode = 0
+	a.hoverDiv = 0
+	l = a.panelLayout()
+	a.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: 4, Y: l.leftTopH})
+	if a.hoverDiv != 4 {
+		t.Fatalf("hoverDiv = %d, 期望 4", a.hoverDiv)
+	}
+	if !strings.Contains(plainView(a), "━") {
+		t.Errorf("横分隔线未高亮")
 	}
 }

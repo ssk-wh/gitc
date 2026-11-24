@@ -1765,11 +1765,20 @@ func (a *App) choiceMenuBox() ([]string, int, int) {
 	if end > n {
 		end = n
 	}
-	title := truncate(m.title, w-3)
+	// 标题与分页信息共用可用宽度：先给分页留位置再截断标题，避免撑宽边框。
+	title := m.title
 	if n > cap {
-		title += fmt.Sprintf(" (%d-%d/%d)", start+1, end, n)
+		page := fmt.Sprintf(" (%d-%d/%d)", start+1, end, n)
+		title = truncate(title, w-4-strWidth(page)) + page
+	} else {
+		title = truncate(title, w-4)
 	}
-	top := "╭─ " + padRight(title, w-3) + "─╮"
+	// 标题右侧用横线填充（而非空格），与区域边框的 ─── 样式一致。
+	fillTitle := w - 4 - strWidth(title)
+	if fillTitle < 0 {
+		fillTitle = 0
+	}
+	top := "╭─ " + title + " " + strings.Repeat("─", fillTitle) + "─╮"
 	lines := []string{top}
 	for i := start; i < end; i++ {
 		c := m.choices[i]
