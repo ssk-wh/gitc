@@ -30,12 +30,16 @@ func (a *App) finalizeView(s string) string {
 		lines = lines[:a.height]
 	}
 	for i, l := range lines {
-		if strWidth(l) > a.width {
+		w := strWidth(l)
+		if w > a.width {
 			lines[i] = ansi.Truncate(l, a.width, "")
+		} else if w < a.width {
+			// 短行必须补满宽度，否则终端会残留上一帧的内容
+			lines[i] = padRight(l, a.width)
 		}
 	}
 	for len(lines) < a.height {
-		lines = append(lines, "")
+		lines = append(lines, strings.Repeat(" ", a.width))
 	}
 	return strings.Join(lines, string(rune(10)))
 }
@@ -134,7 +138,7 @@ func (a *App) dividerHighlight(body string, div int, dragging bool) string {
 		style = styleGood.Bold(true)
 	}
 	l := a.panelLayout()
-	horiz := div == 2 || div == 4 || div == 5 || div == 6
+	horiz := div == 2 || div == 4 || div == 5
 	ch := "║"
 	if horiz {
 		ch = "═"
@@ -147,17 +151,15 @@ func (a *App) dividerHighlight(body string, div int, dragging bool) string {
 				lines[y] = replaceColumn(lines[y], l.leftW, style.Render(ch), a.width)
 			}
 		case 3:
-			for y := l.rightTopH; y < l.rightTopH+l.drawerH && y < len(lines); y++ {
+			for y := l.rightTopH + 1; y < l.rightTopH+1+l.drawerH && y < len(lines); y++ {
 				lines[y] = replaceColumn(lines[y], l.leftW+1+a.drawerSplit(l.rightW), style.Render(ch), a.width)
 			}
 		case 4:
 			lines = replaceRowSegment(lines, l.leftTopH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
-		case 6:
-			lines = replaceRowSegment(lines, l.leftTopH+l.leftMidH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
 		case 2:
 			lines = replaceRowSegment(lines, l.rightTopH, l.leftW+1, l.rightW, style.Render(strings.Repeat(ch, l.rightW)), a.width)
 		case 5:
-			lines = replaceRowSegment(lines, l.rightTopH+l.drawerH, l.leftW+1, l.rightW, style.Render(strings.Repeat(ch, l.rightW)), a.width)
+			lines = replaceRowSegment(lines, l.rightTopH+1+l.drawerH, l.leftW+1, l.rightW, style.Render(strings.Repeat(ch, l.rightW)), a.width)
 		}
 		return strings.Join(lines, string(rune(10)))
 	}
@@ -356,7 +358,7 @@ func (a *App) viewBranchesPanel(width, height int) string {
 		name := strings.TrimLeft(it.label, " ")
 		switch it.kind {
 		case sideBranch, sideRemote:
-			col := colorForRef(it.ref.Name)
+			col := a.refColor(it.ref.Kind, it.ref.Name)
 			if it.ref.Head {
 				style = lipgloss.NewStyle().Foreground(colorGood).Bold(true)
 			} else if ln.itemIdx != a.sideSel {
@@ -477,8 +479,14 @@ func (a *App) infoLinesWith(width int, add func([]string, string, lipgloss.Style
 		return add(nil, i18n.S("（没有选中的提交）", "(no commit selected)"), styleDim)
 	}
 	var out []string
-	out = add(out, c.Short+i18n.S("  分支 ", "  branch ")+sanitize.Line(a.status.Branch), styleBold)
-	out = add(out, "commit "+c.Hash, styleDim)
+	// 头部固定三行两列对齐：Commit / Author / Date
+	out = add(out, fmt.Sprintf("%-8s%s", "Commit", c.Short), styleBold)
+	author := sanitize.Line(c.Author)
+	if a.commitAuthor != "" {
+		author = sanitize.Line(a.commitAuthor)
+	}
+	out = add(out, fmt.Sprintf("%-8s%s", "Author", author), styleBold)
+	out = add(out, fmt.Sprintf("%-8s%s", "Date", c.When.Format("02 Jan 2006 15:04")), styleBold)
 	var refNames []string
 	for _, r := range a.refsAt(c.Hash) {
 		switch r.Kind {
@@ -497,11 +505,6 @@ func (a *App) infoLinesWith(width int, add func([]string, string, lipgloss.Style
 	if len(refNames) > 0 {
 		out = add(out, strings.Join(refNames, "  "), styleMagenta)
 	}
-	author := sanitize.Line(c.Author)
-	if a.commitAuthor != "" {
-		author = sanitize.Line(a.commitAuthor)
-	}
-	out = add(out, c.When.Format("02 Jan 2006 15:04")+i18n.S("  ·  ", "  ·  ")+author, styleDim)
 	out = append(out, "")
 	out = add(out, sanitize.Line(c.Subject), styleAccent)
 	if body := strings.TrimSpace(sanitize.Text(a.commitBody)); body != "" {
@@ -867,8 +870,8 @@ func (a *App) renderRow(row int, layout *graph.Layout, vc []git.Commit, width in
 
 	// 引用徽标
 	refs := a.refsAt(c.Hash)
-	if len(refs) > 3 {
-		refs = refs[:3]
+	if len(refs) > 4 {
+		refs = refs[:4]
 	}
 	var badgeStyled strings.Builder
 	badgeWidth := 0
@@ -884,13 +887,13 @@ func (a *App) renderRow(row int, layout *graph.Layout, vc []git.Commit, width in
 		}
 		txt := "[" + name + "]"
 		w := strWidth(txt)
-		if badgeWidth+w+1 > 30 {
+		if badgeWidth+w+1 > 36 {
 			break
 		}
 		badgeWidth += w + 1
 		style := refStyle(r.Kind)
 		if r.Kind == git.RefLocal || r.Kind == git.RefRemote {
-			style = lipgloss.NewStyle().Foreground(colorForRef(r.Name))
+			style = lipgloss.NewStyle().Foreground(a.refColor(r.Kind, r.Name))
 		}
 		badgeStyled.WriteString(style.Render(txt) + " ")
 	}
@@ -1031,9 +1034,30 @@ func (a *App) viewFooter() string {
 		msg = styleAccent.Render(fmt.Sprintf(i18n.S("全历史搜索: %s（%d 条，Esc 退出）", "history search: %s (%d, Esc to exit)"), a.searchQuery, len(a.searchResults)))
 	}
 	hints := styleDim.Render(a.contextHints())
-	line := a.viewHeader() + styleDim.Render("  ·  ")
+	sep := styleDim.Render("  ·  ")
+	head := a.viewHeader()
+	// 消息过长时优先压缩消息，保证右侧快捷键提示可见
 	if msg != "" {
-		line += msg + styleDim.Render("  ·  ")
+		// 给快捷键提示预留空间（最多 30 列），空间不足时先压缩消息
+		budget := strWidth(hints)
+		if budget > 30 {
+			budget = 30
+		}
+		cap := a.width - strWidth(head) - strWidth(sep)*2 - budget
+		if cap < 8 {
+			cap = 8
+		}
+		if strWidth(msg) > cap {
+			msg = truncate(msg, cap)
+		}
+		// 剩余空间仍不够时截短提示，而不是直接丢弃
+		if avail := a.width - strWidth(head) - strWidth(sep)*2 - strWidth(msg); avail < strWidth(hints) {
+			hints = truncate(hints, maxInt(0, avail))
+		}
+	}
+	line := head + sep
+	if msg != "" {
+		line += msg + sep
 	}
 	line += hints
 	return truncate(line, a.width)
