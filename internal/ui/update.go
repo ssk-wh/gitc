@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gitc/internal/git"
-	"gitc/internal/graph"
-	"gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/graph"
+	"github.com/ssk-wh/gitc/internal/i18n"
 )
 
 // progressMsg 是一条实时进度（fetch/push/pull）。
@@ -294,6 +294,9 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
+	// 键盘操作时清除鼠标拖动/悬停高亮残留
+	a.hoverDiv = 0
+	a.dragMode = 0
 	if a.searchActive {
 		return a.handleSearchKey(k)
 	}
@@ -1621,6 +1624,7 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		case tea.MouseActionRelease:
 			if a.dragMode != 0 {
 				a.dragMode = 0
+				a.hoverDiv = 0
 				a.saveConfig()
 				return a, nil
 			}
@@ -1636,6 +1640,7 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 					return true
 				}
 				a.dragMode = mode
+				a.hoverDiv = 0
 				a.dragTo(m.X, m.Y)
 				return true
 			}

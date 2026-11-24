@@ -1,4 +1,4 @@
-module gitc
+module github.com/ssk-wh/gitc
 
 go 1.27.4
 

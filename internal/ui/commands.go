@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"gitc/internal/clipboard"
-	"gitc/internal/git"
-	"gitc/internal/graph"
-	"gitc/internal/i18n"
-	"gitc/internal/sanitize"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ssk-wh/gitc/internal/clipboard"
+	"github.com/ssk-wh/gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/graph"
+	"github.com/ssk-wh/gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/sanitize"
 )
 
 const (

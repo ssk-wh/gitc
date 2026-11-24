@@ -10,9 +10,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"gitc/internal/config"
-	"gitc/internal/git"
-	"gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/config"
+	"github.com/ssk-wh/gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/i18n"
 )
 
 // fakeSvc 是测试用假服务：读接口返回预置数据，写接口记录调用。

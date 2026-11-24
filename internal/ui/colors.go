@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/git"
 )
 
 // rebuildCommitColors 按"最近分支优先"的多源 BFS 为提交分配分支颜色，

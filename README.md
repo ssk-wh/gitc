@@ -6,26 +6,36 @@
 - **好用**：右键菜单浮在当前界面之上（支持 hover/点击）；分支/当天提交/HEAD 有明显标记；命令历史只记录你主动触发的操作；内置多套主题并支持自定义语义色。
 - **跨平台**：Windows / macOS / Linux，仅依赖系统 `git`（>= 2.23）。
 
-## 安装
+## 安装（一条命令，自动配置 PATH）
 
-需要 Go 1.22+：
+Linux / macOS：
 
 ```bash
-cd code/gitc
-go install .
-# 确保 $(go env GOPATH)/bin 在 PATH 中
+curl -fsSL https://raw.githubusercontent.com/ssk-wh/gitc/master/install.sh | bash
 ```
 
-或构建本地二进制：
+Windows（PowerShell）：
 
 ```powershell
-# Windows
-build/build.ps1
-# macOS / Linux
-build/build.sh
+powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/ssk-wh/gitc/master/install.ps1 | iex"
 ```
 
-产物在 `dist/`，复制到 PATH 即可。
+脚本会从 GitHub Releases 下载对应平台二进制（优先）或从源码构建，校验 SHA256，安装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\gitcin`）并写入 PATH。
+
+其他方式：
+
+```bash
+go install github.com/ssk-wh/gitc@latest   # 需要 Go 1.22+
+```
+
+或本地构建：
+
+```powershell
+build/build.ps1     # Windows
+build/build.sh      # macOS / Linux
+```
+
+每次推送 `v*` tag 时，GitHub Actions 会自动构建 Windows / macOS / Linux（amd64 + arm64）并发布到 Releases。
 
 ## 使用
 

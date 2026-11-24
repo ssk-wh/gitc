@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"gitc/internal/config"
+	"github.com/ssk-wh/gitc/internal/config"
 )
 
 // SetConfig 应用用户配置（主题与布局）。

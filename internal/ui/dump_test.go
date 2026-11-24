@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/git"
 )
 
 // TestDumpScreens 在设置 GITC_DUMP_DIR 时导出各状态界面（去 ANSI），用于人工审查。

@@ -6,8 +6,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"gitc/internal/i18n"
-	"gitc/internal/sanitize"
+	"github.com/ssk-wh/gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/sanitize"
 )
 
 // paneBox 是一个带完整边框的区域。

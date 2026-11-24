@@ -10,13 +10,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gitc/internal/config"
-	"gitc/internal/git"
-	"gitc/internal/i18n"
-	"gitc/internal/ui"
+	"github.com/ssk-wh/gitc/internal/config"
+	"github.com/ssk-wh/gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/ui"
 )
 
-const version = "0.1.0"
+var version = "0.1.0"
 
 func main() {
 	dir := flag.String("C", ".", "仓库目录")

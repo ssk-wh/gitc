@@ -9,10 +9,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
-	"gitc/internal/git"
-	"gitc/internal/graph"
-	"gitc/internal/i18n"
-	"gitc/internal/sanitize"
+	"github.com/ssk-wh/gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/graph"
+	"github.com/ssk-wh/gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/sanitize"
 )
 
 // View 渲染界面，并强制约束为终端尺寸（避免超宽换行/超高校验错位）。
@@ -126,48 +126,93 @@ func (a *App) viewChoiceOverlay(base string) string {
 	return strings.Join(lines, "\n")
 }
 
-// dividerHighlight 高亮整条可拖动的分隔线：hover 强调色，拖动中绿色粗线。
+// dividerHighlight 绘制拖动反馈：hover 为鼠标附近短手柄，拖动中整条绿色高亮。
 func (a *App) dividerHighlight(body string, div int, dragging bool) string {
 	lines := strings.Split(body, string(rune(10)))
 	style := styleAccent.Bold(true)
 	if dragging {
 		style = styleGood.Bold(true)
 	}
-	hl := func(n int) string { return style.Render(strings.Repeat("━", n)) }
-	replaceRow := func(row, x0, w int) {
-		if row < 0 || row >= len(lines) || w <= 0 {
-			return
-		}
-		lines[row] = strings.Repeat(" ", x0) + hl(w) + strings.Repeat(" ", a.width-x0-w)
-	}
-	replaceCol := func(col, y0, y1 int) {
-		if col < 0 || col >= a.width {
-			return
-		}
-		for y := y0; y < y1 && y < len(lines); y++ {
-			plain := ansi.Strip(lines[y])
-			left := runewidth.Truncate(plain, col, "")
-			left += strings.Repeat(" ", maxInt(0, col-runewidth.StringWidth(left)))
-			tail, _ := stripColumnPrefix(plain, col+1)
-			lines[y] = truncate(left+style.Render("┃")+tail, a.width)
-		}
-	}
 	l := a.panelLayout()
-	switch div {
-	case 1: // 左右分栏
-		replaceCol(l.leftW, 0, l.bodyH)
-	case 3: // 文件/内容
-		replaceCol(l.leftW+1+a.drawerSplit(l.rightW), l.rightTopH, l.rightTopH+l.drawerH)
-	case 4: // 分支/改动
-		replaceRow(l.leftTopH, 0, l.leftW)
-	case 6: // 改动/提交信息
-		replaceRow(l.leftTopH+l.leftMidH, 0, l.leftW)
-	case 2: // 提交/抽屉
-		replaceRow(l.rightTopH, l.leftW+1, l.rightW)
-	case 5: // 抽屉/命令
-		replaceRow(l.rightTopH+l.drawerH, l.leftW+1, l.rightW)
+	horiz := div == 2 || div == 4 || div == 5 || div == 6
+	ch := "║"
+	if horiz {
+		ch = "═"
+	}
+	if dragging {
+		// 整条高亮
+		switch div {
+		case 1:
+			for y := 0; y < len(lines) && y < l.bodyH; y++ {
+				lines[y] = replaceColumn(lines[y], l.leftW, style.Render(ch), a.width)
+			}
+		case 3:
+			for y := l.rightTopH; y < l.rightTopH+l.drawerH && y < len(lines); y++ {
+				lines[y] = replaceColumn(lines[y], l.leftW+1+a.drawerSplit(l.rightW), style.Render(ch), a.width)
+			}
+		case 4:
+			lines = replaceRowSegment(lines, l.leftTopH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
+		case 6:
+			lines = replaceRowSegment(lines, l.leftTopH+l.leftMidH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
+		case 2:
+			lines = replaceRowSegment(lines, l.rightTopH, l.leftW+1, l.rightW, style.Render(strings.Repeat(ch, l.rightW)), a.width)
+		case 5:
+			lines = replaceRowSegment(lines, l.rightTopH+l.drawerH, l.leftW+1, l.rightW, style.Render(strings.Repeat(ch, l.rightW)), a.width)
+		}
+		return strings.Join(lines, string(rune(10)))
+	}
+	// hover：鼠标附近一小段手柄
+	const handle = 6
+	if horiz {
+		y := a.hoverY
+		x0, w := 0, l.leftW
+		if div == 2 || div == 5 {
+			x0, w = l.leftW+1, l.rightW
+		}
+		sx := a.hoverX - handle/2
+		if sx < x0+1 {
+			sx = x0 + 1
+		}
+		if sx+handle > x0+w-1 {
+			sx = x0 + w - 1 - handle
+		}
+		lines = replaceRowSegment(lines, y, sx, handle, style.Render(strings.Repeat(ch, handle)), a.width)
+	} else {
+		x := l.leftW
+		if div == 3 {
+			x = l.leftW + 1 + a.drawerSplit(l.rightW)
+		}
+		sr := a.hoverY - handle/2
+		if sr < 1 {
+			sr = 1
+		}
+		for y := sr; y < sr+handle && y < len(lines) && y < l.bodyH-1; y++ {
+			lines[y] = replaceColumn(lines[y], x, style.Render(ch), a.width)
+		}
 	}
 	return strings.Join(lines, string(rune(10)))
+}
+
+// replaceColumn 用纯文本层替换某一显示列。
+func replaceColumn(line string, col int, seg string, width int) string {
+	plain := ansi.Strip(line)
+	left := runewidth.Truncate(plain, col, "")
+	left += strings.Repeat(" ", maxInt(0, col-runewidth.StringWidth(left)))
+	tail, _ := stripColumnPrefix(plain, col+1)
+	return padRight(truncate(left+seg+tail, width), width)
+}
+
+// replaceRowSegment 用纯文本层替换某一行的一段列区间。
+func replaceRowSegment(lines []string, row, x0, w int, seg string, width int) []string {
+	if row < 0 || row >= len(lines) || w <= 0 {
+		return lines
+	}
+	plain := ansi.Strip(lines[row])
+	left := runewidth.Truncate(plain, x0, "")
+	left += strings.Repeat(" ", maxInt(0, x0-runewidth.StringWidth(left)))
+	tail, _ := stripColumnPrefix(plain, x0+w)
+	lines[row] = padRight(truncate(left+seg+tail, width), width)
+	return lines
 }
 
 func strWidth(s string) int { return ansi.StringWidth(s) }

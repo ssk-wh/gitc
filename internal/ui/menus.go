@@ -7,9 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gitc/internal/git"
-	"gitc/internal/i18n"
-	"gitc/internal/sanitize"
+	"github.com/ssk-wh/gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/sanitize"
 )
 
 // openContextMenu 为当前面板的选中项弹出上下文菜单（键盘 b / 鼠标右键）。

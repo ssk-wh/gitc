@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/git"
 )
 
 func TestAltFocusNavigation(t *testing.T) {
@@ -247,7 +247,7 @@ func TestHoverAndClicksNoCorruption(t *testing.T) {
 		if strWidth(trimmed) < 8 {
 			continue
 		}
-		if strings.Trim(trimmed, "─│┃ ") == "" {
+		if strings.Trim(trimmed, "─│┃║═╭╮╰╯ ") == "" {
 			continue
 		}
 		seen[trimmed]++
@@ -382,7 +382,7 @@ func TestDividerHoverAndDragHighlight(t *testing.T) {
 		t.Fatalf("hoverDiv = %d", a.hoverDiv)
 	}
 	v := plainView(a)
-	if !strings.Contains(v, "┃") || !strings.Contains(v, "拖动调整大小") {
+	if !strings.Contains(v, "║") || !strings.Contains(v, "拖动调整大小") {
 		t.Errorf("hover 分隔线未高亮或缺少提示")
 	}
 	// 拖动：底栏显示尺寸
@@ -400,7 +400,7 @@ func TestDividerHoverAndDragHighlight(t *testing.T) {
 	if a.hoverDiv != 4 {
 		t.Fatalf("hoverDiv = %d, 期望 4", a.hoverDiv)
 	}
-	if !strings.Contains(plainView(a), "━") {
+	if !strings.Contains(plainView(a), "═") {
 		t.Errorf("横分隔线未高亮")
 	}
 }

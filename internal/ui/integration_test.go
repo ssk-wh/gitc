@@ -9,8 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gitc/internal/git"
-	"gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/i18n"
 )
 
 // initRepo 创建带分支与合并历史的临时仓库。

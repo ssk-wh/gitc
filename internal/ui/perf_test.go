@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/git"
 )
 
 // TestPerfRepos 通过环境变量指定大仓库，测量首帧与完整加载耗时。

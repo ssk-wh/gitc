@@ -11,11 +11,11 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"gitc/internal/config"
-	"gitc/internal/git"
-	"gitc/internal/graph"
-	"gitc/internal/i18n"
-	"gitc/internal/sanitize"
+	"github.com/ssk-wh/gitc/internal/config"
+	"github.com/ssk-wh/gitc/internal/git"
+	"github.com/ssk-wh/gitc/internal/graph"
+	"github.com/ssk-wh/gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/sanitize"
 )
 
 // Pane 是当前焦点。
