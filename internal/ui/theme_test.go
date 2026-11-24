@@ -35,19 +35,34 @@ func TestCycleTheme(t *testing.T) {
 	if a.themeName != "default" {
 		t.Fatalf("初始主题 = %s", a.themeName)
 	}
-	a.cycleTheme()
-	if a.themeName != "light" {
-		t.Errorf("切换到 %s, 期望 light", a.themeName)
+	for _, want := range ThemeOrder[1:] {
+		a.cycleTheme()
+		if a.themeName != want {
+			t.Fatalf("切换到 %s, 期望 %s", a.themeName, want)
+		}
 	}
 	a.cycleTheme()
-	if a.themeName != "high-contrast" {
-		t.Errorf("切换到 %s, 期望 high-contrast", a.themeName)
-	}
-	a.cycleTheme()
-	if a.themeName != "default" {
-		t.Errorf("回到 %s, 期望 default", a.themeName)
+	if a.themeName != ThemeOrder[0] {
+		t.Errorf("回到 %s, 期望 %s", a.themeName, ThemeOrder[0])
 	}
 	if plainView(a) == "" {
 		t.Error("切换主题后视图为空")
+	}
+}
+
+
+// TestBuiltinThemes 每套内置主题都应可用且有 20 色分支调色板。
+func TestBuiltinThemes(t *testing.T) {
+	for _, name := range ThemeOrder {
+		th, ok := builtinTheme(name)
+		if !ok {
+			t.Fatalf("内置主题 %q 未注册", name)
+		}
+		if th.Name != name {
+			t.Errorf("%q 主题 Name = %q", name, th.Name)
+		}
+		if len(th.Lanes) != 20 {
+			t.Errorf("%q 调色板 %d 色，期望 20", name, len(th.Lanes))
+		}
 	}
 }
