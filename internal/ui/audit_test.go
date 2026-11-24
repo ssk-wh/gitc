@@ -193,10 +193,10 @@ func TestBranchSortByTipTime(t *testing.T) {
 func TestCommitBranchColors(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.rebuildCommitColors()
-	if a.commitColor["aaaaaaaaaaaa1111"] != colorIndexForRef("main") {
+	if a.commitColor["aaaaaaaaaaaa1111"] != a.refColorIndex(git.RefLocal, "main") {
 		t.Errorf("tip 颜色错误: %v", a.commitColor)
 	}
-	if a.commitColor["bbbbbbbbbbbb2222"] != colorIndexForRef("feature/x") {
+	if a.commitColor["bbbbbbbbbbbb2222"] != a.refColorIndex(git.RefLocal, "feature/x") {
 		t.Errorf("feature tip 颜色错误: %v", a.commitColor)
 	}
 	// 父提交继承最近分支颜色
