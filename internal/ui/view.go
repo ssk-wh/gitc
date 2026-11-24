@@ -107,8 +107,17 @@ func (a *App) viewChoiceOverlay(base string) string {
 		if yy < 0 || yy >= len(lines) {
 			continue
 		}
-		// 菜单区域整行覆盖：避免 ANSI/宽字符拼接造成边框错位
-		lines[yy] = padRight(strings.Repeat(" ", x)+bl, a.width)
+		// 在纯文本层按显示列拼接：保留菜单左右两侧内容，同时保证边框不偏移
+		plain := ansi.Strip(lines[yy])
+		left := runewidth.Truncate(plain, x, "")
+		leftW := runewidth.StringWidth(left)
+		left += strings.Repeat(" ", maxInt(0, x-leftW))
+		endCol := x + strWidth(bl)
+		tail, skipped := stripColumnPrefix(plain, endCol)
+		if skipped < endCol {
+			tail = strings.Repeat(" ", endCol-skipped) + tail
+		}
+		lines[yy] = padRight(truncate(left+bl+tail, a.width), a.width)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1277,4 +1286,21 @@ func wrapText(s string, w int) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
+}
+
+// stripColumnPrefix 删除纯文本前 cols 个显示列，返回剩余文本与实际删除列数。
+func stripColumnPrefix(s string, cols int) (string, int) {
+	removed := 0
+	for i, r := range s {
+		if removed >= cols {
+			return s[i:], removed
+		}
+		rw := runewidth.RuneWidth(r)
+		if removed+rw > cols {
+			// 宽字符跨越边界：整体丢弃，多删的列由调用方补空格
+			return s[i+len(string(r)):], removed + rw
+		}
+		removed += rw
+	}
+	return "", removed
 }
