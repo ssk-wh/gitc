@@ -806,8 +806,7 @@ func (a *App) handleGraphKey(k tea.KeyMsg) (cmd tea.Cmd, handled bool) {
 	case "y":
 		c := a.selectedCommit()
 		if c != nil {
-			a.setToast(i18n.S("已复制 "+c.Short, "copied "+c.Short), false)
-			return copyText(c.Hash), true
+			return a.copyToClipboard(c.Hash), true
 		}
 		return nil, true
 	case "C":
@@ -922,8 +921,7 @@ func (a *App) commitActions(c *git.Commit) []choice {
 			return nil
 		}},
 		choice{label: i18n.S("复制完整 sha", "copy full sha"), action: func(a *App) tea.Cmd {
-			a.setToast(i18n.S("已复制 "+c.Short, "copied "+c.Short), false)
-			return copyText(c.Hash)
+			return a.copyToClipboard(c.Hash)
 		}},
 	)
 	return out
