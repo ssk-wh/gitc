@@ -4,7 +4,7 @@
 package graph
 
 // NumColors 是 lane 配色数量，调用方可按此取色板。
-const NumColors = 8
+const NumColors = 20
 
 // Commit 是布局所需的提交信息。
 type Commit struct {

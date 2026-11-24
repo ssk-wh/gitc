@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -23,7 +24,31 @@ type Theme struct {
 }
 
 // ThemeOrder 是切换主题的顺序。
-var ThemeOrder = []string{"default", "light", "high-contrast"}
+var ThemeOrder = []string{"default", "light", "ocean", "forest", "fire", "rose", "high-contrast"}
+
+// defaultLanes 是 20 色分支/提交图配色，深浅终端各一套。
+var defaultLanes = []lipgloss.AdaptiveColor{
+	{Light: "#0969da", Dark: "#58a6ff"}, // 蓝
+	{Light: "#1a7f37", Dark: "#3fb950"}, // 绿
+	{Light: "#9a6700", Dark: "#d29922"}, // 琥珀
+	{Light: "#cf222e", Dark: "#f85149"}, // 红
+	{Light: "#8250df", Dark: "#bc8cff"}, // 紫
+	{Light: "#1b7c83", Dark: "#56d4dd"}, // 青
+	{Light: "#bf3989", Dark: "#ff7bcf"}, // 粉
+	{Light: "#57606a", Dark: "#a5b1bd"}, // 灰蓝
+	{Light: "#0b7285", Dark: "#63e6be"}, // 薄荷
+	{Light: "#b35c00", Dark: "#ffa94d"}, // 橙
+	{Light: "#5f3dc4", Dark: "#b197fc"}, // 靛
+	{Light: "#a61e4d", Dark: "#f06595"}, // 玫红
+	{Light: "#2b8a3e", Dark: "#8ce99a"}, // 草绿
+	{Light: "#1864ab", Dark: "#74c0fc"}, // 天蓝
+	{Light: "#862e9c", Dark: "#da77f2"}, // 紫罗兰
+	{Light: "#0c8599", Dark: "#66d9e8"}, // 湖蓝
+	{Light: "#e67700", Dark: "#ffd43b"}, // 金黄
+	{Light: "#c92a2a", Dark: "#ff8787"}, // 珊瑚
+	{Light: "#364fc7", Dark: "#91a7ff"}, // 宝蓝
+	{Light: "#5c940d", Dark: "#c0eb75"}, // 橄榄
+}
 
 func defaultTheme() Theme {
 	// 轻快配色：明亮蓝 + 薄荷绿 + 柠檬黄 + 珊瑚红 + 紫罗兰
@@ -39,16 +64,7 @@ func defaultTheme() Theme {
 		Cyan:      lipgloss.AdaptiveColor{Light: "#0f766e", Dark: "#38bec9"},
 		Border:    lipgloss.AdaptiveColor{Light: "#0969da", Dark: "#3da9fc"},
 		Selection: lipgloss.AdaptiveColor{Light: "#0969da", Dark: "#38bec9"},
-		Lanes: []lipgloss.AdaptiveColor{
-			{Light: "#0969da", Dark: "#3da9fc"}, // 清新蓝
-			{Light: "#1a7f37", Dark: "#2cb67d"}, // 薄荷绿
-			{Light: "#9a6700", Dark: "#ffd803"}, // 柠檬黄
-			{Light: "#cf222e", Dark: "#ef4565"}, // 珊瑚红
-			{Light: "#6f42c1", Dark: "#a78bfa"}, // 紫罗兰
-			{Light: "#0f766e", Dark: "#38bec9"}, // 青碧
-			{Light: "#bf3989", Dark: "#ff8ba7"}, // 蜜桃粉
-			{Light: "#57606a", Dark: "#b8c7d9"}, // 雾蓝
-		},
+		Lanes: defaultLanes,
 	}
 }
 
@@ -66,16 +82,7 @@ func lightTheme() Theme {
 		Border:    lipgloss.AdaptiveColor{Light: "#0550ae", Dark: "#0550ae"},
 		Selection: lipgloss.AdaptiveColor{Light: "#0550ae", Dark: "#0550ae"},
 	}
-	t.Lanes = []lipgloss.AdaptiveColor{
-		{Light: "#0550ae", Dark: "#0550ae"},
-		{Light: "#116329", Dark: "#116329"},
-		{Light: "#7d4e00", Dark: "#7d4e00"},
-		{Light: "#a40e26", Dark: "#a40e26"},
-		{Light: "#6639ba", Dark: "#6639ba"},
-		{Light: "#0f6b6b", Dark: "#0f6b6b"},
-		{Light: "#9a2d6e", Dark: "#9a2d6e"},
-		{Light: "#424a53", Dark: "#424a53"},
-	}
+	t.Lanes = defaultLanes
 	return t
 }
 
@@ -93,23 +100,95 @@ func highContrastTheme() Theme {
 		Border:    lipgloss.AdaptiveColor{Light: "#0000ff", Dark: "#00afff"},
 		Selection: lipgloss.AdaptiveColor{Light: "#0000ff", Dark: "#00afff"},
 	}
-	t.Lanes = []lipgloss.AdaptiveColor{
-		{Light: "#0000ff", Dark: "#00afff"},
-		{Light: "#008000", Dark: "#00ff5f"},
-		{Light: "#8a6d00", Dark: "#ffd700"},
-		{Light: "#b00020", Dark: "#ff5f5f"},
-		{Light: "#800080", Dark: "#ff5fff"},
-		{Light: "#006666", Dark: "#00ffff"},
-		{Light: "#a0006a", Dark: "#ff87d7"},
-		{Light: "#444444", Dark: "#d0d0d0"},
-	}
+	t.Lanes = defaultLanes
 	return t
+}
+
+
+// oceanTheme 深海蓝：冷静、专注。
+func oceanTheme() Theme {
+	return Theme{
+		Name:      "ocean",
+		Fg:        lipgloss.AdaptiveColor{Light: "#0b2545", Dark: "#eaf4ff"},
+		Dim:       lipgloss.AdaptiveColor{Light: "#506a85", Dark: "#94a1b2"},
+		Accent:    lipgloss.AdaptiveColor{Light: "#0550ae", Dark: "#58a6ff"},
+		Good:      lipgloss.AdaptiveColor{Light: "#0b7285", Dark: "#2cb67d"},
+		Warn:      lipgloss.AdaptiveColor{Light: "#9a6700", Dark: "#ffd43b"},
+		Bad:       lipgloss.AdaptiveColor{Light: "#cf222e", Dark: "#ff6b6b"},
+		Magenta:   lipgloss.AdaptiveColor{Light: "#5f3dc4", Dark: "#b197fc"},
+		Cyan:      lipgloss.AdaptiveColor{Light: "#0c8599", Dark: "#66d9e8"},
+		Border:    lipgloss.AdaptiveColor{Light: "#0550ae", Dark: "#4dabf7"},
+		Selection: lipgloss.AdaptiveColor{Light: "#0550ae", Dark: "#4dabf7"},
+		Lanes:     defaultLanes,
+	}
+}
+
+// forestTheme 林间绿：自然、安静。
+func forestTheme() Theme {
+	return Theme{
+		Name:      "forest",
+		Fg:        lipgloss.AdaptiveColor{Light: "#00332c", Dark: "#eafff7"},
+		Dim:       lipgloss.AdaptiveColor{Light: "#526d64", Dark: "#9bc4b8"},
+		Accent:    lipgloss.AdaptiveColor{Light: "#b35c00", Dark: "#f9bc60"},
+		Good:      lipgloss.AdaptiveColor{Light: "#1a7f37", Dark: "#2cb67d"},
+		Warn:      lipgloss.AdaptiveColor{Light: "#7d4e00", Dark: "#ffd803"},
+		Bad:       lipgloss.AdaptiveColor{Light: "#b00020", Dark: "#e16162"},
+		Magenta:   lipgloss.AdaptiveColor{Light: "#6f42c1", Dark: "#b197fc"},
+		Cyan:      lipgloss.AdaptiveColor{Light: "#0b7285", Dark: "#66d9e8"},
+		Border:    lipgloss.AdaptiveColor{Light: "#2b8a3e", Dark: "#52b788"},
+		Selection: lipgloss.AdaptiveColor{Light: "#2b8a3e", Dark: "#f9bc60"},
+		Lanes:     defaultLanes,
+	}
+}
+
+// fireTheme 焰火橙：热烈、醒目。
+func fireTheme() Theme {
+	return Theme{
+		Name:      "fire",
+		Fg:        lipgloss.AdaptiveColor{Light: "#2b1a0f", Dark: "#fff4e6"},
+		Dim:       lipgloss.AdaptiveColor{Light: "#6d5a4e", Dark: "#a7a9be"},
+		Accent:    lipgloss.AdaptiveColor{Light: "#b35c00", Dark: "#ff8906"},
+		Good:      lipgloss.AdaptiveColor{Light: "#1a7f37", Dark: "#2cb67d"},
+		Warn:      lipgloss.AdaptiveColor{Light: "#7d4e00", Dark: "#fde24f"},
+		Bad:       lipgloss.AdaptiveColor{Light: "#b00020", Dark: "#f25f4c"},
+		Magenta:   lipgloss.AdaptiveColor{Light: "#a61e4d", Dark: "#e53170"},
+		Cyan:      lipgloss.AdaptiveColor{Light: "#0c8599", Dark: "#ffb86c"},
+		Border:    lipgloss.AdaptiveColor{Light: "#b35c00", Dark: "#ff8906"},
+		Selection: lipgloss.AdaptiveColor{Light: "#b35c00", Dark: "#ff8906"},
+		Lanes:     defaultLanes,
+	}
+}
+
+// roseTheme 暖玫瑰：柔和、温暖。
+func roseTheme() Theme {
+	return Theme{
+		Name:      "rose",
+		Fg:        lipgloss.AdaptiveColor{Light: "#33272a", Dark: "#fff1f5"},
+		Dim:       lipgloss.AdaptiveColor{Light: "#77646a", Dark: "#c9ada7"},
+		Accent:    lipgloss.AdaptiveColor{Light: "#a61e4d", Dark: "#ff8ba7"},
+		Good:      lipgloss.AdaptiveColor{Light: "#1a7f37", Dark: "#8ce99a"},
+		Warn:      lipgloss.AdaptiveColor{Light: "#9a6700", Dark: "#ffd6a5"},
+		Bad:       lipgloss.AdaptiveColor{Light: "#b00020", Dark: "#ff6b6b"},
+		Magenta:   lipgloss.AdaptiveColor{Light: "#5f3dc4", Dark: "#d0bfff"},
+		Cyan:      lipgloss.AdaptiveColor{Light: "#0c8599", Dark: "#99e2ff"},
+		Border:    lipgloss.AdaptiveColor{Light: "#a61e4d", Dark: "#ff8ba7"},
+		Selection: lipgloss.AdaptiveColor{Light: "#a61e4d", Dark: "#ff8ba7"},
+		Lanes:     defaultLanes,
+	}
 }
 
 func builtinTheme(name string) (Theme, bool) {
 	switch name {
 	case "light":
 		return lightTheme(), true
+	case "ocean":
+		return oceanTheme(), true
+	case "forest":
+		return forestTheme(), true
+	case "fire":
+		return fireTheme(), true
+	case "rose":
+		return roseTheme(), true
 	case "high-contrast":
 		return highContrastTheme(), true
 	case "", "default":
@@ -155,8 +234,8 @@ func resolveTheme(name string, overrides map[string]string) (Theme, []string) {
 	set("cyan", &t.Cyan)
 	set("border", &t.Border)
 	set("selection", &t.Selection)
-	for i := 0; i < 8; i++ {
-		key := "lane" + string(rune('0'+i))
+	for i := 0; i < 20; i++ {
+		key := "lane" + strconv.Itoa(i)
 		if v, ok := overrides[key]; ok {
 			if c, ok := parseHexColor(v); ok {
 				if i < len(t.Lanes) {

@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/ssk-wh/gitc/internal/git"
 )
 
 // 主题色板：深色/浅色终端自适应。
@@ -19,17 +23,7 @@ var (
 	colorSelect = lipgloss.AdaptiveColor{Light: "#0969da", Dark: "#58a6ff"}
 )
 
-// 图 lane 配色（8 色，与 graph.NumColors 对应）。
-var lanePalette = []lipgloss.AdaptiveColor{
-	{Light: "#0969da", Dark: "#58a6ff"},
-	{Light: "#1a7f37", Dark: "#3fb950"},
-	{Light: "#9a6700", Dark: "#d29922"},
-	{Light: "#cf222e", Dark: "#f85149"},
-	{Light: "#8250df", Dark: "#bc8cff"},
-	{Light: "#1b7c83", Dark: "#56d4dd"},
-	{Light: "#bf3989", Dark: "#ff7bcf"},
-	{Light: "#57606a", Dark: "#a5b1bd"},
-}
+var lanePalette = defaultLanes
 
 var (
 	styleTitle   = lipgloss.NewStyle().Bold(true).Foreground(colorFg)
@@ -83,4 +77,14 @@ func colorIndexForRef(name string) int {
 // colorForRef 为引用名分配稳定颜色（同名始终同色）。
 func colorForRef(name string) lipgloss.AdaptiveColor {
 	return lanePalette[colorIndexForRef(name)]
+}
+
+// normalizeRefName 将远端分支归并到本地同名分支（origin/feature -> feature）。
+func normalizeRefName(kind, name string) string {
+	if kind == git.RefRemote {
+		if i := strings.IndexByte(name, '/'); i >= 0 && i+1 < len(name) {
+			return name[i+1:]
+		}
+	}
+	return name
 }

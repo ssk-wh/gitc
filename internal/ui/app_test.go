@@ -307,7 +307,7 @@ func TestInitialView(t *testing.T) {
 func TestNavigationAndDetail(t *testing.T) {
 	a, _ := newFakeApp(t)
 	// 首行是未提交伪行，向下到第一条提交
-	sendKey(a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	sendKey(a, tea.KeyMsg{Type: tea.KeyDown})
 	if c := a.selectedCommit(); c == nil || c.Subject != "修复切换音频崩溃" {
 		t.Fatalf("选中提交错误: %+v", c)
 	}
@@ -925,7 +925,7 @@ func TestFilesHeaderRightClickAllChanges(t *testing.T) {
 	l := a.panelLayout()
 	// 文件列标题行：抽屉上边框 y=rightTopH；x 在右侧
 	x := l.leftW + 2
-	y := l.rightTopH
+	y := l.rightTopH + 1
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: x, Y: y})
 	if a.modal == nil {
 		t.Fatal("右键文件标题应弹菜单")
@@ -1051,7 +1051,7 @@ func TestDragRightDividers(t *testing.T) {
 
 	// 命令历史分隔线
 	l = a.panelLayout()
-	cy := l.rightTopH + l.drawerH
+	cy := l.rightTopH + 1 + l.drawerH
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.leftW + 5, Y: cy})
 	if a.dragMode != 5 {
 		t.Fatalf("命令分隔线模式 = %d", a.dragMode)
@@ -1077,7 +1077,7 @@ func TestFilesTreeMouseExpandAndPreview(t *testing.T) {
 		t.Fatalf("可见行 = %d", len(a.fileRows))
 	}
 	l := a.panelLayout()
-	y0 := l.rightTopH + 1 // 抽屉内容第一行
+	y0 := l.rightTopH + 2 // 抽屉内容第一行（上边框下移 1 行）
 	x := l.leftW + 2
 	// 点击 src 目录应折叠
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x, Y: y0})
@@ -1101,7 +1101,7 @@ func TestTabAndAltFocus(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.commands = []commandEntry{{at: time.Now(), line: "git status"}}
 	a.pane = PaneBranches
-	order := []Pane{PaneChanges, PaneCommits, PaneFiles, PaneContent, PaneLog, PaneInfo, PaneBranches}
+	order := []Pane{PaneInfo, PaneCommits, PaneFiles, PaneContent, PaneLog, PaneBranches}
 	for _, want := range order {
 		sendKey(a, tea.KeyMsg{Type: tea.KeyTab})
 		if a.pane != want {
@@ -1109,8 +1109,8 @@ func TestTabAndAltFocus(t *testing.T) {
 		}
 	}
 	sendKey(a, tea.KeyMsg{Type: tea.KeyShiftTab})
-	if a.pane != PaneInfo {
-		t.Fatalf("Shift+Tab 后焦点 = %v, 期望 PaneInfo", a.pane)
+	if a.pane != PaneLog {
+		t.Fatalf("Shift+Tab 后焦点 = %v, 期望 PaneLog", a.pane)
 	}
 	// Alt+方向键按空间位置切换：左三分支/改动/信息，右四提交/文件/内容/命令。
 	a.pane = PaneBranches
@@ -1131,8 +1131,8 @@ func TestTabAndAltFocus(t *testing.T) {
 		t.Fatalf("命令 alt+up = %v, 期望文件区", a.pane)
 	}
 	sendKey(a, tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
-	if a.pane != PaneChanges {
-		t.Fatalf("文件 alt+left = %v, 期望改动区", a.pane)
+	if a.pane != PaneBranches {
+		t.Fatalf("文件 alt+left = %v, 期望分支区", a.pane)
 	}
 }
 
@@ -1218,19 +1218,6 @@ func TestLeftDividersDrag(t *testing.T) {
 	}
 	a.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 2, Y: yTop + 2})
 
-	l = a.panelLayout()
-	yMid := l.leftTopH + l.leftMidH
-	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: yMid})
-	if a.dragMode != 6 {
-		t.Fatalf("中分隔线拖动模式 = %d, 期望 6", a.dragMode)
-	}
-	beforeMid := a.leftMidH
-	a.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: 2, Y: yMid - 2})
-	if a.leftMidH != beforeMid-2 {
-		t.Errorf("leftMidH = %d, 期望 %d", a.leftMidH, beforeMid-2)
-	}
-	a.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 2, Y: yMid - 2})
-
 	// 双击上分隔线复位
 	a.lastClick = time.Time{}
 	l = a.panelLayout()
@@ -1247,15 +1234,12 @@ func TestLeftDividersDrag(t *testing.T) {
 func TestPanelViewHeights(t *testing.T) {
 	a, _ := newFakeApp(t)
 	l := a.panelLayout()
-	if got := a.branchViewHeight(); got != l.leftTopH-1 {
-		t.Errorf("branchViewHeight = %d, 期望 %d", got, l.leftTopH-1)
-	}
-	if got := a.changesViewHeight(); got != l.leftMidH-1 {
-		t.Errorf("changesViewHeight = %d, 期望 %d", got, l.leftMidH-1)
+	if got := a.branchViewHeight(); got != l.leftTopH-2 {
+		t.Errorf("branchViewHeight = %d, 期望 %d", got, l.leftTopH-2)
 	}
 	a.pane = PaneBranches
-	if got := a.currentViewHeight(); got != l.leftTopH-1 {
-		t.Errorf("分支区 currentViewHeight = %d, 期望 %d", got, l.leftTopH-1)
+	if got := a.currentViewHeight(); got != l.leftTopH-2 {
+		t.Errorf("分支区 currentViewHeight = %d, 期望 %d", got, l.leftTopH-2)
 	}
 }
 
@@ -1263,7 +1247,7 @@ func TestPanelViewHeights(t *testing.T) {
 func TestInfoHeaderRightClick(t *testing.T) {
 	a, _ := newFakeApp(t)
 	l := a.panelLayout()
-	y := l.leftTopH + l.leftMidH
+	y := l.leftTopH + 1
 	pane, row, ok := a.hitTest(2, y)
 	if !ok || pane != PaneInfo || row != -1 {
 		t.Fatalf("提交信息标题命中 = (%v,%d,%v), 期望 (PaneInfo,-1,true)", pane, row, ok)
@@ -1327,11 +1311,11 @@ func TestIMECompositionIgnored(t *testing.T) {
 // TestCommitColorMatchesBadge 验证提交 lane 颜色与分支徽标同色。
 func TestCommitColorMatchesBadge(t *testing.T) {
 	a, _ := newFakeApp(t)
-	if got := a.commitColorOf("aaaaaaaaaaaa1111", -1); got != colorIndexForRef("main") {
-		t.Errorf("main 提交颜色 = %d, 分支徽标颜色 = %d", got, colorIndexForRef("main"))
+	if got, want := a.commitColorOf("aaaaaaaaaaaa1111", -1), a.refColorIndex(git.RefLocal, "main"); got != want {
+		t.Errorf("main 提交颜色 = %d, 分支徽标颜色 = %d", got, want)
 	}
-	if got := a.commitColorOf("bbbbbbbbbbbb2222", -1); got != colorIndexForRef("feature/x") {
-		t.Errorf("feature/x 提交颜色 = %d, 分支徽标颜色 = %d", got, colorIndexForRef("feature/x"))
+	if got, want := a.commitColorOf("bbbbbbbbbbbb2222", -1), a.refColorIndex(git.RefLocal, "feature/x"); got != want {
+		t.Errorf("feature/x 提交颜色 = %d, 分支徽标颜色 = %d", got, want)
 	}
 }
 
@@ -1448,15 +1432,17 @@ func TestHeaderRightClickMenus(t *testing.T) {
 	if !strings.Contains(a.modal.title, "分支") {
 		t.Errorf("BRANCHES 标题菜单 = %q", a.modal.title)
 	}
-	click(2, l.leftTopH)
-	if !strings.Contains(a.modal.title, "工作区改动") {
-		t.Errorf("改动标题菜单 = %q", a.modal.title)
+	// 提交区右键标题/边框不再弹菜单（避免误触），左键点标题才打开分支筛选
+	a.modal = nil
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: l.leftW + 5, Y: 0})
+	if a.modal != nil {
+		t.Errorf("COMMITS 标题右键不应弹菜单，实际 %q", a.modal.title)
 	}
-	click(l.leftW+5, 0)
-	if !strings.Contains(a.modal.title, "分支的提交") {
-		t.Errorf("COMMITS 标题菜单 = %q", a.modal.title)
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.leftW + 5, Y: 0})
+	if a.modal == nil || !strings.Contains(a.modal.title, "分支的提交") {
+		t.Errorf("COMMITS 标题左键应打开分支筛选")
 	}
-	click(l.leftW+5, l.rightTopH+l.drawerH)
+	click(l.leftW+5, l.rightTopH+2+l.drawerH)
 	if !strings.Contains(a.modal.title, "命令历史") {
 		t.Errorf("COMMANDS 标题菜单 = %q", a.modal.title)
 	}
@@ -1575,5 +1561,189 @@ func TestCommitInfoFixedPanel(t *testing.T) {
 	}
 	if !found {
 		t.Error("提交信息标题应位于左下固定面板")
+	}
+}
+
+// TestViewFillsEveryLine 每行都必须补满终端宽度，避免短行右侧残留上一帧内容。
+func TestViewFillsEveryLine(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 60, Height: 16})
+	check := func(name string, view string) {
+		t.Helper()
+		lines := strings.Split(view, "\n")
+		if len(lines) != 16 {
+			t.Fatalf("%s: 行数 %d，期望 16", name, len(lines))
+		}
+		for i, ln := range lines {
+			if w := strWidth(ln); w != 60 {
+				t.Fatalf("%s: 第 %d 行宽度 %d，期望 60: %q", name, i, w, ansi.Strip(ln))
+			}
+		}
+	}
+	check("main", a.View())
+	a.overlay = overlayDetail
+	a.detail.lines = []string{"short", "第二行"}
+	check("detail", a.View())
+	a.overlay = overlayHelp
+	check("help", a.View())
+}
+
+// TestFooterKeepsHintsWithLongToast 长提示不能把右侧快捷键提示挤出屏幕。
+func TestFooterKeepsHintsWithLongToast(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.toast = "已复制: " + strings.Repeat("很长的提交信息", 10)
+	v := plainView(a)
+	lines := strings.Split(v, "\n")
+	last := strings.TrimSpace(lines[len(lines)-1])
+	if !strings.Contains(last, "↑↓") {
+		t.Fatalf("底部快捷键提示被挤掉: %q", last)
+	}
+}
+
+// TestCopyToastImmediate 点击复制时提示必须立即出现，不能等剪贴板命令返回。
+func TestCopyToastImmediate(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.toast = "上一条消息"
+	a.copyToClipboard("新的提交信息")
+	if !strings.Contains(a.toast, "已复制") || !strings.Contains(a.toast, "新的提交信息") {
+		t.Fatalf("复制提示未立即刷新: %q", a.toast)
+	}
+}
+
+// TestFilesScrollReachesLastRow 文件列表滚动到底必须能看到最后一个文件。
+func TestFilesScrollReachesLastRow(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	var files []fileEntry
+	for i := 0; i < 30; i++ {
+		files = append(files, fileEntry{path: fmt.Sprintf("f%02d.go", i), status: "M"})
+	}
+	a.setFiles(files)
+	a.pane = PaneFiles
+	a.fileSel = len(a.fileRows) - 1
+	a.ensureFileVisible()
+	h := a.fileViewHeight()
+	if want := len(a.fileRows) - h; a.fileOff != want {
+		t.Fatalf("fileOff = %d, 期望 %d", a.fileOff, want)
+	}
+	if v := plainView(a); !strings.Contains(v, "f29.go") {
+		t.Fatal("滚动到底后最后一行文件未渲染")
+	}
+}
+
+// TestFileTreeSkipsDirPlaceholder 目录占位条目（path 以 / 结尾）不能渲染成空白文件。
+func TestFileTreeSkipsDirPlaceholder(t *testing.T) {
+	_, rows := buildFileTree([]fileEntry{{path: "docs/"}, {path: "docs/a.md"}}, map[string]bool{"docs": true})
+	for _, r := range rows {
+		if strings.TrimSpace(r.node.name) == "" {
+			t.Fatalf("出现空白文件名: %+v", r)
+		}
+	}
+	if len(rows) != 2 {
+		t.Fatalf("行数 = %d，期望 2: %+v", len(rows), rows)
+	}
+}
+
+// TestMenuWheelThenOutsideClickCloses 菜单滚轮后，单击空白处应立即关闭。
+func TestMenuWheelThenOutsideClickCloses(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pane = PaneCommits
+	a.graphSel = a.dirtyOffset()
+	a.modalAnchorX, a.modalAnchorY = 40, 4
+	_ = a.openContextMenu()
+	if a.modal == nil {
+		t.Fatal("菜单未打开")
+	}
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown, X: 40, Y: 6})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: a.height - 2})
+	if a.modal != nil {
+		t.Fatalf("滚轮后点击空白未关闭菜单: %q", a.modal.title)
+	}
+}
+
+// TestScrollbarsRender 可滚动区域应显示滚动条（滑块字符 ┃）。
+func TestScrollbarsRender(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	var files []fileEntry
+	for i := 0; i < 40; i++ {
+		files = append(files, fileEntry{path: fmt.Sprintf("f%02d.go", i), status: "M"})
+	}
+	a.setFiles(files)
+	a.pane = PaneFiles
+	a.fileSel = 0
+	a.ensureFileVisible()
+	if v := plainView(a); !strings.Contains(v, "┃") {
+		t.Error("文件区滚动条未渲染")
+	}
+
+	// 详情浮层
+	a.overlay = overlayDetail
+	a.detail.lines = nil
+	for i := 0; i < 60; i++ {
+		a.detail.lines = append(a.detail.lines, fmt.Sprintf("line %d", i))
+	}
+	if v := plainView(a); !strings.Contains(v, "┃") {
+		t.Error("详情浮层滚动条未渲染")
+	}
+	// 方向键滚动详情
+	a.detail.offset = 0
+	a.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if a.detail.offset == 0 {
+		t.Error("方向键下未滚动详情浮层")
+	}
+}
+
+// TestInfoPaneScrollsWithArrows 提交信息区方向键应滚动内容，而不是移动提交选中。
+func TestInfoPaneScrollsWithArrows(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pane = PaneInfo
+	a.graphSel = a.dirtyOffset()
+	a.clampSelection()
+	a.commitBody = strings.Repeat("很长的正文行"+string(rune(10)), 40)
+	a.infoOff = 0
+	sel := a.graphSel
+	a.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if a.infoOff == 0 {
+		t.Errorf("提交信息区方向键下未滚动 (lines=%d viewH=%d)", a.infoLineCount(), a.infoViewHeight())
+	}
+	if a.graphSel != sel {
+		t.Error("提交信息区滚动不应改变提交选中")
+	}
+}
+
+// TestInfoDefaultHeightMatchesDrawer 提交信息区默认高度应与文件区一致。
+func TestInfoDefaultHeightMatchesDrawer(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.commands = []commandEntry{{at: time.Now(), line: "git status"}}
+	l := a.panelLayout()
+	if !l.split {
+		t.Skip("窄屏不分区")
+	}
+	if l.leftBotH != l.drawerH {
+		t.Errorf("提交信息高度 = %d，文件区高度 = %d", l.leftBotH, l.drawerH)
+	}
+}
+
+// TestCommitRowShowsBranchAndTag 同一提交上的分支与 tag 徽标都要显示。
+func TestCommitRowShowsBranchAndTag(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.refs = append(a.refs, git.Ref{Name: "v9.9", Kind: git.RefTag, Target: "aaaaaaaaaaaa1111"})
+	a.rebuildCommitColors()
+	found := false
+	for _, line := range strings.Split(plainView(a), "\n") {
+		if !strings.Contains(line, "[HEAD]") {
+			continue
+		}
+		found = true
+		if !strings.Contains(line, "[*main]") {
+			t.Errorf("提交行缺少分支徽标: %q", line)
+		}
+		if !strings.Contains(line, "[v9.9]") {
+			t.Errorf("提交行缺少 tag 徽标: %q", line)
+		}
+	}
+	if !found {
+		t.Fatal("未找到 HEAD 提交行")
 	}
 }
