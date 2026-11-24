@@ -1247,15 +1247,15 @@ func TestLeftDividersDrag(t *testing.T) {
 func TestPanelViewHeights(t *testing.T) {
 	a, _ := newFakeApp(t)
 	l := a.panelLayout()
-	if got := a.branchViewHeight(); got != l.leftTopH-1 {
-		t.Errorf("branchViewHeight = %d, 期望 %d", got, l.leftTopH-1)
+	if got := a.branchViewHeight(); got != l.leftTopH-2 {
+		t.Errorf("branchViewHeight = %d, 期望 %d", got, l.leftTopH-2)
 	}
-	if got := a.changesViewHeight(); got != l.leftMidH-1 {
-		t.Errorf("changesViewHeight = %d, 期望 %d", got, l.leftMidH-1)
+	if got := a.changesViewHeight(); got != l.leftMidH-2 {
+		t.Errorf("changesViewHeight = %d, 期望 %d", got, l.leftMidH-2)
 	}
 	a.pane = PaneBranches
-	if got := a.currentViewHeight(); got != l.leftTopH-1 {
-		t.Errorf("分支区 currentViewHeight = %d, 期望 %d", got, l.leftTopH-1)
+	if got := a.currentViewHeight(); got != l.leftTopH-2 {
+		t.Errorf("分支区 currentViewHeight = %d, 期望 %d", got, l.leftTopH-2)
 	}
 }
 
@@ -1452,9 +1452,15 @@ func TestHeaderRightClickMenus(t *testing.T) {
 	if !strings.Contains(a.modal.title, "工作区改动") {
 		t.Errorf("改动标题菜单 = %q", a.modal.title)
 	}
-	click(l.leftW+5, 0)
-	if !strings.Contains(a.modal.title, "分支的提交") {
-		t.Errorf("COMMITS 标题菜单 = %q", a.modal.title)
+	// 提交区右键标题/边框不再弹菜单（避免误触），左键点标题才打开分支筛选
+	a.modal = nil
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: l.leftW + 5, Y: 0})
+	if a.modal != nil {
+		t.Errorf("COMMITS 标题右键不应弹菜单，实际 %q", a.modal.title)
+	}
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.leftW + 5, Y: 0})
+	if a.modal == nil || !strings.Contains(a.modal.title, "分支的提交") {
+		t.Errorf("COMMITS 标题左键应打开分支筛选")
 	}
 	click(l.leftW+5, l.rightTopH+l.drawerH)
 	if !strings.Contains(a.modal.title, "命令历史") {
@@ -1575,5 +1581,85 @@ func TestCommitInfoFixedPanel(t *testing.T) {
 	}
 	if !found {
 		t.Error("提交信息标题应位于左下固定面板")
+	}
+}
+
+// TestViewFillsEveryLine 每行都必须补满终端宽度，避免短行右侧残留上一帧内容。
+func TestViewFillsEveryLine(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 60, Height: 16})
+	check := func(name string, view string) {
+		t.Helper()
+		lines := strings.Split(view, "\n")
+		if len(lines) != 16 {
+			t.Fatalf("%s: 行数 %d，期望 16", name, len(lines))
+		}
+		for i, ln := range lines {
+			if w := strWidth(ln); w != 60 {
+				t.Fatalf("%s: 第 %d 行宽度 %d，期望 60: %q", name, i, w, ansi.Strip(ln))
+			}
+		}
+	}
+	check("main", a.View())
+	a.overlay = overlayDetail
+	a.detail.lines = []string{"short", "第二行"}
+	check("detail", a.View())
+	a.overlay = overlayHelp
+	check("help", a.View())
+}
+
+// TestFooterKeepsHintsWithLongToast 长提示不能把右侧快捷键提示挤出屏幕。
+func TestFooterKeepsHintsWithLongToast(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.toast = "已复制: " + strings.Repeat("很长的提交信息", 10)
+	v := plainView(a)
+	lines := strings.Split(v, "\n")
+	last := strings.TrimSpace(lines[len(lines)-1])
+	if !strings.Contains(last, "↑↓") {
+		t.Fatalf("底部快捷键提示被挤掉: %q", last)
+	}
+}
+
+// TestCopyToastImmediate 点击复制时提示必须立即出现，不能等剪贴板命令返回。
+func TestCopyToastImmediate(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.toast = "上一条消息"
+	a.copyToClipboard("新的提交信息")
+	if !strings.Contains(a.toast, "已复制") || !strings.Contains(a.toast, "新的提交信息") {
+		t.Fatalf("复制提示未立即刷新: %q", a.toast)
+	}
+}
+
+// TestChangesScrollReachesLastRow 滚动到底必须能看到最后一个文件。
+func TestChangesScrollReachesLastRow(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	var st git.Status
+	for i := 0; i < 30; i++ {
+		st.Unstaged = append(st.Unstaged, git.FileChange{Path: fmt.Sprintf("dir%02d/f%02d.go", i/5, i), X: '.', Y: 'M'})
+	}
+	a.status = st
+	a.rebuildChanges()
+	a.changeSel = len(a.changesRows) - 1
+	a.ensureChangeVisible()
+	h := a.changesViewHeight()
+	if want := len(a.changesRows) - h; a.changeOff != want {
+		t.Fatalf("changeOff = %d, 期望 %d", a.changeOff, want)
+	}
+	if v := plainView(a); !strings.Contains(v, "f29.go") {
+		t.Fatal("滚动到底后最后一行文件未渲染")
+	}
+}
+
+// TestFileTreeSkipsDirPlaceholder 目录占位条目（path 以 / 结尾）不能渲染成空白文件。
+func TestFileTreeSkipsDirPlaceholder(t *testing.T) {
+	_, rows := buildFileTree([]fileEntry{{path: "docs/"}, {path: "docs/a.md"}}, map[string]bool{"docs": true})
+	for _, r := range rows {
+		if strings.TrimSpace(r.node.name) == "" {
+			t.Fatalf("出现空白文件名: %+v", r)
+		}
+	}
+	if len(rows) != 2 {
+		t.Fatalf("行数 = %d，期望 2: %+v", len(rows), rows)
 	}
 }

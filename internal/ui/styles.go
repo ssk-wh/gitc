@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/ssk-wh/gitc/internal/git"
 )
 
 // 主题色板：深色/浅色终端自适应。
@@ -19,16 +23,28 @@ var (
 	colorSelect = lipgloss.AdaptiveColor{Light: "#0969da", Dark: "#58a6ff"}
 )
 
-// 图 lane 配色（8 色，与 graph.NumColors 对应）。
+// 图 lane / 分支配色（20 色，与 graph.NumColors 对应）。
 var lanePalette = []lipgloss.AdaptiveColor{
-	{Light: "#0969da", Dark: "#58a6ff"},
-	{Light: "#1a7f37", Dark: "#3fb950"},
-	{Light: "#9a6700", Dark: "#d29922"},
-	{Light: "#cf222e", Dark: "#f85149"},
-	{Light: "#8250df", Dark: "#bc8cff"},
-	{Light: "#1b7c83", Dark: "#56d4dd"},
-	{Light: "#bf3989", Dark: "#ff7bcf"},
-	{Light: "#57606a", Dark: "#a5b1bd"},
+	{Light: "#0969da", Dark: "#58a6ff"}, // 蓝
+	{Light: "#1a7f37", Dark: "#3fb950"}, // 绿
+	{Light: "#9a6700", Dark: "#d29922"}, // 琥珀
+	{Light: "#cf222e", Dark: "#f85149"}, // 红
+	{Light: "#8250df", Dark: "#bc8cff"}, // 紫
+	{Light: "#1b7c83", Dark: "#56d4dd"}, // 青
+	{Light: "#bf3989", Dark: "#ff7bcf"}, // 粉
+	{Light: "#57606a", Dark: "#a5b1bd"}, // 灰蓝
+	{Light: "#0b7285", Dark: "#63e6be"}, // 薄荷
+	{Light: "#b35c00", Dark: "#ffa94d"}, // 橙
+	{Light: "#5f3dc4", Dark: "#b197fc"}, // 靛
+	{Light: "#a61e4d", Dark: "#f06595"}, // 玫红
+	{Light: "#2b8a3e", Dark: "#8ce99a"}, // 草绿
+	{Light: "#1864ab", Dark: "#74c0fc"}, // 天蓝
+	{Light: "#862e9c", Dark: "#da77f2"}, // 紫罗兰
+	{Light: "#0c8599", Dark: "#66d9e8"}, // 湖蓝
+	{Light: "#e67700", Dark: "#ffd43b"}, // 金黄
+	{Light: "#c92a2a", Dark: "#ff8787"}, // 珊瑚
+	{Light: "#364fc7", Dark: "#91a7ff"}, // 宝蓝
+	{Light: "#5c940d", Dark: "#c0eb75"}, // 橄榄
 }
 
 var (
@@ -83,4 +99,14 @@ func colorIndexForRef(name string) int {
 // colorForRef 为引用名分配稳定颜色（同名始终同色）。
 func colorForRef(name string) lipgloss.AdaptiveColor {
 	return lanePalette[colorIndexForRef(name)]
+}
+
+// normalizeRefName 将远端分支归并到本地同名分支（origin/feature -> feature）。
+func normalizeRefName(kind, name string) string {
+	if kind == git.RefRemote {
+		if i := strings.IndexByte(name, '/'); i >= 0 && i+1 < len(name) {
+			return name[i+1:]
+		}
+	}
+	return name
 }
