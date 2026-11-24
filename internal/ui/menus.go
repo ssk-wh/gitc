@@ -270,13 +270,7 @@ func (a *App) commitMenuChoices(c *git.Commit) []choice {
 }
 
 func (a *App) fileMenuChoices(f fileEntry, working bool) []choice {
-	out := []choice{
-		{label: i18n.S("查看 diff（聚焦内容区）", "view diff"), action: func(a *App) tea.Cmd {
-			a.pane = PaneContent
-			a.clampContentScroll()
-			return nil
-		}},
-	}
+	var out []choice
 	if working {
 		label := i18n.S("暂存该文件", "stage file")
 		if f.staged {
