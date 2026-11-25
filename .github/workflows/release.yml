@@ -24,7 +24,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --title "gitc $RELEASE_TAG" --notes "gitc $RELEASE_TAG"
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --title "gitc $RELEASE_TAG" --generate-notes
+          else
+            # 修复历史版本可能被多次追加的 Full Changelog
+            body="$(gh release view "$RELEASE_TAG" --json body --jq .body)"
+            clean="$(printf '%s' "$body" | awk '!/^Full Changelog:/ || !seen[$0]++')"
+            if [ "$clean" != "$body" ]; then
+              printf '%s' "$clean" > /tmp/release-body.md
+              gh release edit "$RELEASE_TAG" --notes-file /tmp/release-body.md
+            fi
+          fi
+      - name: Dedupe release notes
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          gh release list --limit 20 --json tagName --jq '.[].tagName' | while read -r tag; do
+            [ -n "$tag" ] || continue
+            body="$(gh release view "$tag" --json body --jq .body)"
+            clean="$(printf '%s' "$body" | awk '!/^Full Changelog:/ || !seen[$0]++')"
+            if [ "$clean" != "$body" ]; then
+              printf '%s' "$clean" > /tmp/release-body.md
+              gh release edit "$tag" --notes-file /tmp/release-body.md
+              echo "cleaned $tag"
+            fi
+          done
+
       - name: Prefer master branch
         shell: bash
         continue-on-error: true
@@ -66,12 +92,14 @@ jobs:
           go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_TAG}" -o "$out" .
           ls -lh dist
       - name: Upload to release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: gitc ${{ env.RELEASE_TAG }}
-          files: dist/*
-          generate_release_notes: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # 只上传资产，不修改 Release 正文（正文由 prepare 生成一次）
+          gh release upload "$RELEASE_TAG" dist/* --clobber
 
   checksums:
     needs: build
