@@ -1991,3 +1991,17 @@ func TestUpdateCheckSkippedForLocalBuild(t *testing.T) {
 		t.Error("本地构建不应发起更新检查")
 	}
 }
+
+// TestHelpProjectInfoFirst GitHub 信息应位于顶部独立区域，排在快捷键之前。
+func TestHelpProjectInfoFirst(t *testing.T) {
+	all := strings.Join(helpLines(), "\n")
+	project := strings.Index(all, "项目信息")
+	keys := strings.Index(all, "快捷键")
+	github := strings.Index(all, "https://github.com/ssk-wh/gitc")
+	if project < 0 || keys < 0 || github < 0 {
+		t.Fatalf("帮助页缺少项目信息/快捷键: %q", all)
+	}
+	if !(project < github && github < keys) {
+		t.Fatalf("项目信息应位于快捷键之前: project=%d github=%d keys=%d", project, github, keys)
+	}
+}
