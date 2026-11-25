@@ -6,7 +6,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"os/exec"
+	"strconv"
 	"strings"
+	"syscall"
 	"unicode/utf16"
 )
 
@@ -82,7 +84,7 @@ public static class GitcFolderPicker {
                 dlg.SetFolder(folder);
             }
         }
-        if (dlg.Show(IntPtr.Zero) != 0) return null;
+        if (dlg.Show(new IntPtr(PARENT_HWND)) != 0) return null;
         IShellItem result;
         if (dlg.GetResult(out result) != 0) return null;
         IntPtr ptr;
@@ -96,9 +98,23 @@ $p=[GitcFolderPicker]::Pick('选择项目目录',[Environment]::GetFolderPath('U
 if($p){[Console]::Out.Write($p)}
 `
 
+var (
+	user32            = syscall.NewLazyDLL("user32.dll")
+	procGetForeground = user32.NewProc("GetForegroundWindow")
+	procSetForeground = user32.NewProc("SetForegroundWindow")
+)
+
 func pickDirectory() (string, error) {
-	encoded := base64.StdEncoding.EncodeToString(utf16LE(pickerScript))
-	out, err := exec.Command("powershell", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-EncodedCommand", encoded).Output()
+	// 把对话框挂到当前终端窗口上，避免选择时终端被最小化/失焦。
+	parent, _, _ := procGetForeground.Call()
+	script := strings.ReplaceAll(pickerScript, "PARENT_HWND", strconv.FormatUint(uint64(parent), 10))
+	encoded := base64.StdEncoding.EncodeToString(utf16LE(script))
+	cmd := exec.Command("powershell", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-EncodedCommand", encoded)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000} // CREATE_NO_WINDOW
+	out, err := cmd.Output()
+	if parent != 0 {
+		defer procSetForeground.Call(parent)
+	}
 	if err != nil {
 		var ee *exec.Error
 		if errors.As(err, &ee) {
