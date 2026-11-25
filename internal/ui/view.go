@@ -344,7 +344,23 @@ func panelHeader(title string, width int, focused bool) string {
 	return styleHeader.Render(line)
 }
 
-// viewProjectsPanel 渲染左上角项目区。
+// projectBranchOf 返回项目的当前分支（未加载完成时显示省略号）。
+func (a *App) projectBranchOf(p projectEntry) string {
+	if p.Path == a.currentPath {
+		if a.status.Detached {
+			return i18n.S("分离 HEAD", "detached")
+		}
+		if a.status.Branch != "" {
+			return a.status.Branch
+		}
+	}
+	if b := a.projectBranch[p.Path]; b != "" {
+		return b
+	}
+	return "…"
+}
+
+// viewProjectsPanel 渲染左上角项目区：项目名与分支两列对齐。
 func (a *App) viewProjectsPanel(width, height int) string {
 	header := panelHeader(i18n.S("项目", "PROJECTS"), width, a.pane == PaneProjects)
 	if height <= 1 {
@@ -365,6 +381,18 @@ func (a *App) viewProjectsPanel(width, height int) string {
 	}
 	if a.projectOff < 0 {
 		a.projectOff = 0
+	}
+	nameCol := 0
+	for _, p := range a.projects {
+		if w := strWidth(p.Name); w > nameCol {
+			nameCol = w
+		}
+	}
+	if max := width - 14; nameCol > max {
+		nameCol = max
+	}
+	if nameCol < 4 {
+		nameCol = 4
 	}
 	out := []string{header}
 	end := a.projectOff + avail
@@ -389,16 +417,8 @@ func (a *App) viewProjectsPanel(width, height int) string {
 				style = styleGood
 			}
 		}
-		line := marker + cur + sanitize.Line(p.Name)
-		if p.Path == a.currentPath {
-			branch := sanitize.Line(a.status.Branch)
-			if a.status.Detached {
-				branch = i18n.S("分离 HEAD", "detached")
-			}
-			if branch != "" {
-				line += "  " + branch
-			}
-		}
+		name := padRight(p.Name, nameCol)
+		line := marker + cur + name + "  " + sanitize.Line(a.projectBranchOf(p))
 		out = append(out, truncate(style.Render(line), width))
 	}
 	for len(out) < height {
