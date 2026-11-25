@@ -19,7 +19,7 @@ func (a *App) SetConfig(c config.File) {
 	a.leftMidH = c.LeftMid
 	a.cmdH = c.CommandH
 	a.applyThemeSettings(c.Theme, c.Colors)
-	a.SetProjects(c.Projects, a.svc.RootPath())
+	a.loadInitialProjects(c)
 	if len(a.themeBad) > 0 {
 		a.setToast("主题颜色非法并已忽略: "+strings.Join(a.themeBad, ", "), true)
 	}

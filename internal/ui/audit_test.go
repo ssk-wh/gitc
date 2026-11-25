@@ -23,16 +23,16 @@ func TestAltFocusNavigation(t *testing.T) {
 		t.Errorf("Alt+Down 第二次 => %v", a.pane)
 	}
 	a.altFocus("right")
-	if a.pane != PaneLog {
+	if a.pane != PaneFiles {
 		t.Errorf("Alt+Right 从 Info => %v", a.pane)
 	}
 	a.altFocus("up")
-	if a.pane != PaneFiles {
-		t.Errorf("Alt+Up 从 Log => %v", a.pane)
+	if a.pane != PaneCommits {
+		t.Errorf("Alt+Up 从 Files => %v", a.pane)
 	}
 	a.altFocus("up")
 	if a.pane != PaneCommits {
-		t.Errorf("Alt+Up 第二次 => %v", a.pane)
+		t.Errorf("Alt+Up 在 Commits 应停留 => %v", a.pane)
 	}
 }
 
@@ -369,8 +369,8 @@ func TestAltRightFilesToContent(t *testing.T) {
 		t.Errorf("内容区 Alt+Left = %v, 期望文件区", a.pane)
 	}
 	a.altFocus("left")
-	if a.pane != PaneBranches {
-		t.Errorf("文件区再次 Alt+Left = %v, 期望分支区", a.pane)
+	if a.pane != PaneInfo {
+		t.Errorf("文件区 Alt+Left = %v, 期望提交信息区", a.pane)
 	}
 }
 
