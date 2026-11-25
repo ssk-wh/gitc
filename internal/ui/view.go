@@ -989,7 +989,7 @@ func (a *App) renderRow(row int, layout *graph.Layout, vc []git.Commit, width in
 	if strWidth(line) > width {
 		line = ansi.Truncate(line, width, "")
 	}
-	if selected {
+	if selected || a.rowInCommitSelection(row) {
 		return styleRowSel.Render(padRight(ansi.Strip(line), width))
 	}
 	return line

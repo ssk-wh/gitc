@@ -1853,3 +1853,71 @@ func TestSearchResultsRightClick(t *testing.T) {
 		t.Errorf("右键后选中行 = %d，期望 %d", a.graphSel, a.dirtyOffset())
 	}
 }
+
+// TestCommitCtrlRangeSelection Ctrl+点击可选择连续提交区间。
+func TestCommitCtrlRangeSelection(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pane = PaneCommits
+	a.graphSel = a.dirtyOffset()
+	l := a.panelLayout()
+	click := func(row int, ctrl bool) {
+		a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Ctrl: ctrl, X: l.leftW + 3, Y: 1 + row})
+	}
+	click(a.dirtyOffset(), true)
+	click(a.dirtyOffset()+1, true)
+	if got := a.commitSelectionCount(); got != 2 {
+		t.Fatalf("多选数量 = %d，期望 2", got)
+	}
+	click(a.dirtyOffset()+2, true)
+	if got := a.commitSelectionCount(); got != 3 {
+		t.Fatalf("扩展后多选数量 = %d，期望 3", got)
+	}
+	click(a.dirtyOffset()+1, false)
+	if a.commitSelectionCount() != 0 || a.commitAnchor != -1 {
+		t.Fatal("普通点击应清除多选")
+	}
+}
+
+// TestCommitSquashMenuAndPlan 多选后菜单出现合并项，计划正确。
+func TestCommitSquashMenuAndPlan(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.status.Staged = nil
+	a.commitAnchor = a.dirtyOffset()
+	a.graphSel = a.dirtyOffset() + 1
+	c := a.selectedCommit()
+	if c == nil {
+		t.Fatal("没有选中提交")
+	}
+	labels := ""
+	for _, ch := range a.commitMenuChoices(c) {
+		labels += ch.label + "\n"
+	}
+	if !strings.Contains(labels, "合并 2 个提交") {
+		t.Fatalf("菜单缺少合并项:\n%s", labels)
+	}
+	if !strings.Contains(labels, "编辑提交信息") {
+		t.Fatalf("菜单缺少编辑提交信息:\n%s", labels)
+	}
+	hashes, head, parent, msg, err := a.squashPlan()
+	if err != nil {
+		t.Fatalf("squashPlan: %v", err)
+	}
+	if len(hashes) != 2 || head != "aaaaaaaaaaaa1111" || parent != "cccccccccccc3333" {
+		t.Fatalf("计划错误: hashes=%v head=%s parent=%s", hashes, head, parent)
+	}
+	if !strings.Contains(msg, "修复切换音频崩溃") || !strings.Contains(msg, "支持摄像头分辨率") {
+		t.Fatalf("默认提交信息 = %q", msg)
+	}
+}
+
+// TestCommitEditMessagePrompt 读取提交信息后应打开可编辑弹窗。
+func TestCommitEditMessagePrompt(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(commitMessageMsg{sha: "aaaaaaaaaaaa1111", message: "旧提交信息"})
+	if a.modal == nil || a.modal.kind != modalText {
+		t.Fatalf("未打开提交信息编辑框: %+v", a.modal)
+	}
+	if !strings.Contains(a.modal.text.Value(), "旧提交信息") {
+		t.Fatalf("编辑框内容 = %q", a.modal.text.Value())
+	}
+}

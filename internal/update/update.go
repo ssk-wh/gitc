@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"fmt"
 	"io"
 	"net/http"
@@ -107,6 +108,9 @@ func Run(ctx context.Context, opts Options) error {
 	dir := filepath.Dir(opts.ExePath)
 	tmp, err := os.CreateTemp(dir, ".gitc-update-*")
 	if err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			return fmt.Errorf("安装目录 %s 不可写：请使用 `sudo %s --update`，或重新运行安装脚本安装到 ~/.local/bin", dir, filepath.Base(opts.ExePath))
+		}
 		return fmt.Errorf("无法在安装目录写入临时文件: %w", err)
 	}
 	tmpName := tmp.Name()
