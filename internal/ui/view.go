@@ -344,7 +344,23 @@ func panelHeader(title string, width int, focused bool) string {
 	return styleHeader.Render(line)
 }
 
-// viewProjectsPanel 渲染左上角项目区。
+// projectBranchOf 返回项目的当前分支（未加载完成时显示省略号）。
+func (a *App) projectBranchOf(p projectEntry) string {
+	if p.Path == a.currentPath {
+		if a.status.Detached {
+			return i18n.S("分离 HEAD", "detached")
+		}
+		if a.status.Branch != "" {
+			return a.status.Branch
+		}
+	}
+	if b := a.projectBranch[p.Path]; b != "" {
+		return b
+	}
+	return "…"
+}
+
+// viewProjectsPanel 渲染左上角项目区：项目名与分支两列对齐。
 func (a *App) viewProjectsPanel(width, height int) string {
 	header := panelHeader(i18n.S("项目", "PROJECTS"), width, a.pane == PaneProjects)
 	if height <= 1 {
@@ -365,6 +381,18 @@ func (a *App) viewProjectsPanel(width, height int) string {
 	}
 	if a.projectOff < 0 {
 		a.projectOff = 0
+	}
+	nameCol := 0
+	for _, p := range a.projects {
+		if w := strWidth(p.Name); w > nameCol {
+			nameCol = w
+		}
+	}
+	if max := width - 14; nameCol > max {
+		nameCol = max
+	}
+	if nameCol < 4 {
+		nameCol = 4
 	}
 	out := []string{header}
 	end := a.projectOff + avail
@@ -389,16 +417,8 @@ func (a *App) viewProjectsPanel(width, height int) string {
 				style = styleGood
 			}
 		}
-		line := marker + cur + sanitize.Line(p.Name)
-		if p.Path == a.currentPath {
-			branch := sanitize.Line(a.status.Branch)
-			if a.status.Detached {
-				branch = i18n.S("分离 HEAD", "detached")
-			}
-			if branch != "" {
-				line += "  " + branch
-			}
-		}
+		name := padRight(p.Name, nameCol)
+		line := marker + cur + name + "  " + sanitize.Line(a.projectBranchOf(p))
 		out = append(out, truncate(style.Render(line), width))
 	}
 	for len(out) < height {
@@ -1111,12 +1131,33 @@ func (a *App) renderGraphRow(r graph.Row, maxWidth int, isHead bool) string {
 	return b.String()
 }
 
-// viewFooter 渲染底部两行。
+// joinFooter 左右两段对齐：右侧贴右，宽度不足时左侧省略。
+func joinFooter(left, right string, width int) string {
+	rw := strWidth(right)
+	if rw >= width {
+		return truncate(right, width)
+	}
+	avail := width - rw - 1
+	if strWidth(left) > avail {
+		if avail < 1 {
+			return truncate(right, width)
+		}
+		left = truncate(left, avail)
+	}
+	pad := width - strWidth(left) - rw
+	if pad < 1 {
+		pad = 1
+	}
+	return left + strings.Repeat(" ", pad) + right
+}
+
+// viewFooter 渲染底部：左侧版本/提示，右侧按键说明。
 func (a *App) viewFooter() string {
-	// 搜索：行内显示输入框
+	// 搜索：行内输入框在左，提示在右
 	if a.searchActive {
-		line := styleAccent.Render("/ 搜索: ") + a.searchInput.View() + styleDim.Render(i18n.S("   ⏎ 全历史  esc 清除", "   ⏎ history  esc clear"))
-		return truncate(line, a.width)
+		left := styleAccent.Render("/ 搜索: ") + a.searchInput.View()
+		right := styleDim.Render(i18n.S("⏎ 全历史  esc 清除", "⏎ history  esc clear"))
+		return joinFooter(left, right, a.width)
 	}
 	var msg string
 	if a.toast != "" {
@@ -1134,34 +1175,12 @@ func (a *App) viewFooter() string {
 	} else if a.searchResults != nil {
 		msg = styleAccent.Render(fmt.Sprintf(i18n.S("全历史搜索: %s（%d 条，Esc 退出）", "history search: %s (%d, Esc to exit)"), a.searchQuery, len(a.searchResults)))
 	}
-	hints := styleDim.Render(a.contextHints())
 	sep := styleDim.Render("  ·  ")
-	head := a.viewHeader()
-	// 消息过长时优先压缩消息，保证右侧快捷键提示可见
+	left := a.viewHeader()
 	if msg != "" {
-		// 给快捷键提示预留空间（最多 30 列），空间不足时先压缩消息
-		budget := strWidth(hints)
-		if budget > 30 {
-			budget = 30
-		}
-		cap := a.width - strWidth(head) - strWidth(sep)*2 - budget
-		if cap < 8 {
-			cap = 8
-		}
-		if strWidth(msg) > cap {
-			msg = truncate(msg, cap)
-		}
-		// 剩余空间仍不够时截短提示，而不是直接丢弃
-		if avail := a.width - strWidth(head) - strWidth(sep)*2 - strWidth(msg); avail < strWidth(hints) {
-			hints = truncate(hints, maxInt(0, avail))
-		}
+		left += sep + msg
 	}
-	line := head + sep
-	if msg != "" {
-		line += msg + sep
-	}
-	line += hints
-	return truncate(line, a.width)
+	return joinFooter(left, styleDim.Render(a.contextHints()), a.width)
 }
 
 func (a *App) contextHints() string {
@@ -1203,6 +1222,13 @@ func (a *App) contextHints() string {
 	case PaneChanges:
 		return i18n.S("↑↓ 选择  space 暂存  d 丢弃  D 全部丢弃  a/u 全部  b/右键 菜单", "↑↓ select  space stage  d discard  D discard all  a/u all  b/right-click menu")
 	case PaneFiles:
+		if a.filesOwner != "work" {
+			return i18n.S("↑↓ 切换文件  ⏎ 内容区  b 菜单", "↑↓ files  ⏎ content  b menu")
+		}
+		f := a.selectedFile()
+		if f != nil && f.staged {
+			return i18n.S("↑↓ 切换文件  ⏎ 内容区  space 取消暂存  d 丢弃  b 菜单", "↑↓ files  ⏎ content  space unstage  d discard  b menu")
+		}
 		return i18n.S("↑↓ 切换文件  ⏎ 内容区  space 暂存  d 丢弃  b 菜单", "↑↓ files  ⏎ content  space stage  d discard  b menu")
 	case PaneContent:
 		return i18n.S("↑↓ 滚动  PgUp/PgDn 翻页  / 搜索  Tab 切区  b 菜单", "↑↓ scroll  PgUp/PgDn page  / search  Tab switch  b menu")
