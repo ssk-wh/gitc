@@ -16,6 +16,7 @@ import (
 	"github.com/ssk-wh/gitc/internal/git"
 	"github.com/ssk-wh/gitc/internal/graph"
 	"github.com/ssk-wh/gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/platform"
 	"github.com/ssk-wh/gitc/internal/sanitize"
 )
 
@@ -30,6 +31,7 @@ const (
 	PaneContent              // 右下抽屉：diff/内容
 	PaneLog                  // 右下角：命令历史
 	PaneInfo                 // 左下角：提交信息
+	PaneProjects             // 左上角：项目切换
 )
 
 // overlayKind 是全屏覆盖层。
@@ -272,10 +274,10 @@ type App struct {
 	remoteTagCache  map[string]bool
 	projects        []projectEntry
 	projectSel      int
+	projectOff      int
 	currentPath     string
 	openRepo        func(string) (git.Service, error)
-	projectNameX    int
-	projectNameW    int
+	pickDir         func() (string, error)
 	drawerLeftW     int // 抽屉文件列宽度（0 表示默认比例）
 	rightTopH       int // 提交区高度（0 表示默认比例）
 	dragMode        int // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线
@@ -362,9 +364,14 @@ func New(svc git.Service) *App {
 		commitAnchor:    -1,
 		remoteTagCache:  map[string]bool{},
 		openRepo:        func(path string) (git.Service, error) { return git.Open(path) },
+		pickDir:         platform.PickDirectory,
 		changesExpanded: map[string]bool{},
 	}
 	a.layout = a.builder.Layout()
+	if cur := cleanProjectPath(svc.RootPath()); cur != "" {
+		a.projects = []projectEntry{{Name: filepath.Base(cur), Path: cur}}
+		a.currentPath = cur
+	}
 	a.toast = i18n.S("按 ? 查看帮助", "press ? for help")
 	return a
 }
@@ -570,16 +577,6 @@ func (a *App) rebuildSidebar() {
 	key := a.sideSelKey
 	var items []sideItem
 	add := func(it sideItem) { items = append(items, it) }
-
-	if len(a.projects) > 1 {
-		for _, p := range a.projects {
-			mark := "  "
-			if p.Path == a.currentPath {
-				mark = "* "
-			}
-			add(sideItem{kind: sideProject, label: mark + p.Name, key: "p:" + p.Path, section: "projects", project: p})
-		}
-	}
 
 	// 分支按 tip 提交时间倒序（用户要求默认按最新提交时间排序）。
 	tipTime := make(map[string]time.Time, len(a.commits))
@@ -1007,6 +1004,7 @@ type panelLayout struct {
 	leftW     int
 	rightW    int
 	bodyH     int
+	projH     int
 	leftTopH  int
 	leftMidH  int
 	leftBotH  int
@@ -1075,27 +1073,37 @@ func (a *App) panelLayout() panelLayout {
 	if drawerH < 3 {
 		drawerH = 3
 	}
-	// 左侧两分区：分支 + 提交信息；提交信息默认高度与文件区（抽屉）一致
+	// 左上角项目区：每个项目 1 行，最多 4 行
+	projH := len(a.projects) + 2
+	if projH < 3 {
+		projH = 3
+	}
+	if projH > 6 {
+		projH = 6
+	}
+	avail := bodyH - projH - 1
+	// 左侧分支 + 提交信息；提交信息默认高度与文件区（抽屉）一致
 	ltop := a.leftTopH
 	if ltop <= 0 {
-		ltop = bodyH - drawerH - 1
+		ltop = avail - drawerH - 1
 	}
-	if ltop < 6 {
-		ltop = 6
+	if ltop < 4 {
+		ltop = 4
 	}
-	if ltop > bodyH-6 {
-		ltop = bodyH - 6
+	if ltop > avail-4 {
+		ltop = avail - 4
 	}
-	linfo := bodyH - ltop - 1
+	linfo := avail - ltop - 1
 	if linfo < 4 {
 		linfo = 4
-		ltop = bodyH - linfo - 1
+		ltop = avail - linfo - 1
 	}
 	return panelLayout{
 		split:     true,
 		leftW:     lw,
 		rightW:    a.width - lw - 1,
 		bodyH:     bodyH,
+		projH:     projH,
 		leftTopH:  ltop,
 		leftBotH:  linfo,
 		rightTopH: top,
@@ -1197,7 +1205,7 @@ func (a *App) contentViewHeight() int { return a.drawerBodyHeight() }
 
 // nextPane 循环切换焦点。
 func (a *App) nextPane(delta int) {
-	order := []Pane{PaneBranches, PaneInfo, PaneCommits, PaneFiles, PaneContent, PaneLog}
+	order := []Pane{PaneProjects, PaneBranches, PaneInfo, PaneCommits, PaneFiles, PaneContent, PaneLog}
 	idx := -1
 	for i, p := range order {
 		if p == a.pane {
@@ -1215,6 +1223,9 @@ func (a *App) nextPane(delta int) {
 		if p == PaneLog && len(a.commands) == 0 {
 			continue
 		}
+		if p == PaneProjects && !a.panelLayout().split {
+			continue
+		}
 		a.pane = p
 		break
 	}
@@ -1223,12 +1234,15 @@ func (a *App) nextPane(delta int) {
 
 // altFocus 处理 Alt+方向键的区域切换。
 func (a *App) altFocus(dir string) {
-	left := a.pane == PaneBranches || a.pane == PaneInfo
+	left := a.pane == PaneProjects || a.pane == PaneBranches || a.pane == PaneInfo
 	switch dir {
 	case "up":
 		if left {
-			if a.pane == PaneInfo {
+			switch a.pane {
+			case PaneInfo:
 				a.pane = PaneBranches
+			case PaneBranches:
+				a.pane = PaneProjects
 			}
 		} else {
 			switch a.pane {
@@ -1240,7 +1254,10 @@ func (a *App) altFocus(dir string) {
 		}
 	case "down":
 		if left {
-			if a.pane == PaneBranches {
+			switch a.pane {
+			case PaneProjects:
+				a.pane = PaneBranches
+			case PaneBranches:
 				a.pane = PaneInfo
 			}
 		} else {
@@ -1264,6 +1281,8 @@ func (a *App) altFocus(dir string) {
 		}
 	case "right":
 		switch a.pane {
+		case PaneProjects:
+			a.pane = PaneCommits
 		case PaneBranches:
 			a.pane = PaneCommits
 		case PaneFiles:
@@ -1278,6 +1297,8 @@ func (a *App) altFocus(dir string) {
 // ensurePaneVisible 让各区的选中项滚入可视范围。
 func (a *App) ensurePaneVisible() {
 	switch a.pane {
+	case PaneProjects:
+		a.ensureProjectVisible()
 	case PaneBranches:
 		a.ensureSideVisible()
 	case PaneChanges:
@@ -1292,6 +1313,39 @@ func (a *App) ensurePaneVisible() {
 		a.clampCmdOffset()
 	case PaneInfo:
 		a.clampInfoOffset()
+	}
+}
+
+// projectViewHeight 返回项目区可视行数。
+func (a *App) projectViewHeight() int {
+	h := a.panelLayout().projH - 2
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// ensureProjectVisible 修正项目区滚动。
+func (a *App) ensureProjectVisible() {
+	if len(a.projects) == 0 {
+		a.projectSel, a.projectOff = 0, 0
+		return
+	}
+	if a.projectSel >= len(a.projects) {
+		a.projectSel = len(a.projects) - 1
+	}
+	if a.projectSel < 0 {
+		a.projectSel = 0
+	}
+	h := a.projectViewHeight()
+	if a.projectSel < a.projectOff {
+		a.projectOff = a.projectSel
+	}
+	if a.projectSel >= a.projectOff+h {
+		a.projectOff = a.projectSel - h + 1
+	}
+	if a.projectOff < 0 {
+		a.projectOff = 0
 	}
 }
 
@@ -1402,7 +1456,7 @@ type sideLine struct {
 
 func (a *App) sidebarLines() []sideLine {
 	var lines []sideLine
-	for _, sec := range []string{"projects", "branches", "remote", "tags", "stash"} {
+	for _, sec := range []string{"branches", "remote", "tags", "stash"} {
 		n := a.sectionCount(sec)
 		if n == 0 && sec != "branches" {
 			continue

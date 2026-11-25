@@ -165,7 +165,7 @@ func (a *App) dividerHighlight(body string, div int, dragging bool) string {
 				lines[y] = replaceColumn(lines[y], l.leftW+1+a.drawerSplit(l.rightW), style.Render(ch), a.width)
 			}
 		case 4:
-			lines = replaceRowSegment(lines, l.leftTopH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
+			lines = replaceRowSegment(lines, l.projH+1+l.leftTopH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
 		case 2:
 			lines = replaceRowSegment(lines, l.rightTopH, l.leftW+1, l.rightW, style.Render(strings.Repeat(ch, l.rightW)), a.width)
 		case 5:
@@ -263,17 +263,6 @@ var buildVersion string
 func SetVersion(v string) { buildVersion = v }
 
 func (a *App) viewHeader() string {
-	branch := sanitize.Line(a.status.Branch)
-	if a.status.Detached {
-		oid := a.status.OID
-		if len(oid) > 7 {
-			oid = oid[:7]
-		}
-		branch = i18n.S("(分离 HEAD "+oid+")", "(detached "+oid+")")
-	}
-	if branch == "" {
-		branch = "-"
-	}
 	parts := []string{styleTitle.Render("gitc")}
 	if v := strings.TrimSpace(buildVersion); v != "" {
 		if !strings.HasPrefix(v, "v") {
@@ -281,25 +270,14 @@ func (a *App) viewHeader() string {
 		}
 		parts = append(parts, styleDim.Render(v))
 	}
-	a.updateBadgeW, a.updateBadgeX = 0, 0
 	if a.updateAvailable && a.latestVersion != "" {
 		sep := styleDim.Render("  ·  ")
 		a.updateBadgeX = strWidth(strings.Join(parts, sep)) + strWidth(sep)
 		badge := styleWarn.Bold(true).Render("⬆ " + a.latestVersion)
 		a.updateBadgeW = strWidth(badge)
 		parts = append(parts, badge)
-	}
-	sep := styleDim.Render("  ·  ")
-	if prefix := strings.Join(parts, sep); prefix != "" {
-		a.projectNameX = strWidth(prefix) + strWidth(sep)
 	} else {
-		a.projectNameX = 0
-	}
-	repoPart := styleAccent.Render(sanitize.Line(a.svc.Name()))
-	a.projectNameW = strWidth(repoPart)
-	parts = append(parts, repoPart, styleGood.Bold(true).Render(branch))
-	if a.status.Upstream != "" {
-		parts = append(parts, styleDim.Render(a.status.Upstream))
+		a.updateBadgeX, a.updateBadgeW = 0, 0
 	}
 	if a.status.Ahead > 0 || a.status.Behind > 0 {
 		parts = append(parts, styleCyan.Render(fmt.Sprintf("↑%d ↓%d", a.status.Ahead, a.status.Behind)))
@@ -364,6 +342,69 @@ func panelHeader(title string, width int, focused bool) string {
 		return styleAccent.Bold(true).Render(line)
 	}
 	return styleHeader.Render(line)
+}
+
+// viewProjectsPanel 渲染左上角项目区。
+func (a *App) viewProjectsPanel(width, height int) string {
+	header := panelHeader(i18n.S("项目", "PROJECTS"), width, a.pane == PaneProjects)
+	if height <= 1 {
+		return header
+	}
+	avail := height - 1
+	if a.projectSel >= len(a.projects) {
+		a.projectSel = len(a.projects) - 1
+	}
+	if a.projectSel < 0 {
+		a.projectSel = 0
+	}
+	if a.projectSel < a.projectOff {
+		a.projectOff = a.projectSel
+	}
+	if a.projectSel >= a.projectOff+avail {
+		a.projectOff = a.projectSel - avail + 1
+	}
+	if a.projectOff < 0 {
+		a.projectOff = 0
+	}
+	out := []string{header}
+	end := a.projectOff + avail
+	if end > len(a.projects) {
+		end = len(a.projects)
+	}
+	if len(a.projects) == 0 {
+		out = append(out, styleDim.Render(i18n.S("  （没有项目）", "  (no projects)")))
+	}
+	for i := a.projectOff; i < end; i++ {
+		p := a.projects[i]
+		marker := "  "
+		style := styleAccent
+		if a.pane == PaneProjects && i == a.projectSel {
+			marker = "› "
+			style = styleSel
+		}
+		cur := "  "
+		if p.Path == a.currentPath {
+			cur = "* "
+			if a.pane != PaneProjects || i != a.projectSel {
+				style = styleGood
+			}
+		}
+		line := marker + cur + sanitize.Line(p.Name)
+		if p.Path == a.currentPath {
+			branch := sanitize.Line(a.status.Branch)
+			if a.status.Detached {
+				branch = i18n.S("分离 HEAD", "detached")
+			}
+			if branch != "" {
+				line += "  " + branch
+			}
+		}
+		out = append(out, truncate(style.Render(line), width))
+	}
+	for len(out) < height {
+		out = append(out, "")
+	}
+	return strings.Join(out[:height], string(rune(10)))
 }
 
 // viewBranchesPanel 渲染左侧分支区（全高）。
@@ -1334,7 +1375,7 @@ func helpLines() []string {
 		{"M", i18n.S("冲突态 continue / abort", "resolve merge/rebase: continue / abort")},
 		{"T", i18n.S("切换主题（default/light/ocean/forest/fire/rose/high-contrast）", "cycle theme")},
 		{"L / R / ?", i18n.S("命令日志 / 刷新 / 帮助", "command log / refresh / help")},
-		{"右键底部项目名", i18n.S("添加项目 / 切换项目（目录选择框）", "add/switch projects (directory picker)")},
+		{"右键项目区标题", i18n.S("添加项目 / 切换项目（系统目录选择框）", "add/switch projects (system directory picker)")},
 		{"q / Ctrl+C", i18n.S("退出", "quit")},
 	}
 	// 顶部独立区域：项目与 GitHub 信息

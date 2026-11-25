@@ -15,6 +15,7 @@ import (
 	"github.com/ssk-wh/gitc/internal/config"
 	"github.com/ssk-wh/gitc/internal/git"
 	"github.com/ssk-wh/gitc/internal/i18n"
+	"github.com/ssk-wh/gitc/internal/platform"
 )
 
 // fakeSvc 是测试用假服务：读接口返回预置数据，写接口记录调用。
@@ -228,6 +229,11 @@ func sampleCommits() []git.Commit {
 		{Hash: "bbbbbbbbbbbb2222", Short: "bbbbbbb", Parents: []string{"cccccccccccc3333"}, Author: "李四", When: noon.Add(-2 * time.Hour), Subject: "支持摄像头分辨率"},
 		{Hash: "cccccccccccc3333", Short: "ccccccc", Author: "张三", When: noon.Add(-48 * time.Hour), Subject: "初始提交"},
 	}
+}
+
+// sideY 返回左侧分支栏某可见行的屏幕 Y 坐标（扣掉项目区）。
+func sideY(a *App, row int) int {
+	return a.panelLayout().projH + 2 + row
 }
 
 func newFakeApp(t *testing.T) (*App, *fakeSvc) {
@@ -456,7 +462,7 @@ func TestMouseClickBranchCheckout(t *testing.T) {
 	if idx < 0 {
 		t.Fatalf("未找到 feature/x 行: %+v", lines)
 	}
-	click := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 1 + idx}
+	click := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: sideY(a, idx)}
 	a.Update(click)
 	if a.pane != PaneBranches {
 		t.Fatalf("点击侧栏应聚焦侧栏")
@@ -631,7 +637,7 @@ func TestBranchRightClickMenu(t *testing.T) {
 	if idx < 0 {
 		t.Fatal("未找到分支行")
 	}
-	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: 2, Y: 1 + idx})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: 2, Y: sideY(a, idx)})
 	if a.modal == nil || a.modal.kind != modalChoice {
 		t.Fatalf("右键分支应弹出菜单")
 	}
@@ -660,7 +666,7 @@ func TestCollapsibleSections(t *testing.T) {
 	if idx < 0 {
 		t.Fatal("未找到 REMOTE 标题")
 	}
-	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 1 + idx})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: sideY(a, idx)})
 	shown := false
 	for _, ln := range a.sidebarLines() {
 		if ln.itemIdx >= 0 && a.sideItems[ln.itemIdx].section == "remote" {
@@ -671,7 +677,7 @@ func TestCollapsibleSections(t *testing.T) {
 		t.Fatal("点击标题后应收起远端分支")
 	}
 	// 再次点击展开
-	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 1 + idx})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: sideY(a, idx)})
 	for _, ln := range a.sidebarLines() {
 		if ln.itemIdx >= 0 && a.sideItems[ln.itemIdx].section == "remote" {
 			shown = true
@@ -914,7 +920,7 @@ func TestSectionHeaderRightClickMenu(t *testing.T) {
 	if idx < 0 {
 		t.Fatal("未找到 TAGS 标题")
 	}
-	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: 2, Y: 1 + idx})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: 2, Y: sideY(a, idx)})
 	if a.modal == nil || a.modal.kind != modalChoice {
 		t.Fatal("右键分组标题应弹出分组菜单")
 	}
@@ -1109,7 +1115,7 @@ func TestTabAndAltFocus(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.commands = []commandEntry{{at: time.Now(), line: "git status"}}
 	a.pane = PaneBranches
-	order := []Pane{PaneInfo, PaneCommits, PaneFiles, PaneContent, PaneLog, PaneBranches}
+	order := []Pane{PaneInfo, PaneCommits, PaneFiles, PaneContent, PaneLog, PaneProjects, PaneBranches}
 	for _, want := range order {
 		sendKey(a, tea.KeyMsg{Type: tea.KeyTab})
 		if a.pane != want {
@@ -1117,8 +1123,8 @@ func TestTabAndAltFocus(t *testing.T) {
 		}
 	}
 	sendKey(a, tea.KeyMsg{Type: tea.KeyShiftTab})
-	if a.pane != PaneLog {
-		t.Fatalf("Shift+Tab 后焦点 = %v, 期望 PaneLog", a.pane)
+	if a.pane != PaneProjects {
+		t.Fatalf("Shift+Tab 后焦点 = %v, 期望 PaneProjects", a.pane)
 	}
 	// Alt+方向键按空间位置切换：左三分支/改动/信息，右四提交/文件/内容/命令。
 	a.pane = PaneBranches
@@ -1215,7 +1221,7 @@ func TestLeftDividersDrag(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
 	l := a.panelLayout()
-	yTop := l.leftTopH
+	yTop := l.projH + 1 + l.leftTopH
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: yTop})
 	if a.dragMode != 4 {
 		t.Fatalf("上分隔线拖动模式 = %d, 期望 4", a.dragMode)
@@ -1229,7 +1235,7 @@ func TestLeftDividersDrag(t *testing.T) {
 	// 双击上分隔线复位
 	a.lastClick = time.Time{}
 	l = a.panelLayout()
-	yTop = l.leftTopH
+	yTop = l.projH + 1 + l.leftTopH
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: yTop})
 	a.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 2, Y: yTop})
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: yTop})
@@ -1255,7 +1261,7 @@ func TestPanelViewHeights(t *testing.T) {
 func TestInfoHeaderRightClick(t *testing.T) {
 	a, _ := newFakeApp(t)
 	l := a.panelLayout()
-	y := l.leftTopH + 1
+	y := l.projH + 1 + l.leftTopH + 1
 	pane, row, ok := a.hitTest(2, y)
 	if !ok || pane != PaneInfo || row != -1 {
 		t.Fatalf("提交信息标题命中 = (%v,%d,%v), 期望 (PaneInfo,-1,true)", pane, row, ok)
@@ -1436,7 +1442,7 @@ func TestHeaderRightClickMenus(t *testing.T) {
 			t.Fatalf("右键标题 (%d,%d) 应弹出菜单", x, y)
 		}
 	}
-	click(2, 0)
+	click(2, l.projH+1)
 	if !strings.Contains(a.modal.title, "分支") {
 		t.Errorf("BRANCHES 标题菜单 = %q", a.modal.title)
 	}
@@ -2115,29 +2121,21 @@ func TestBranchMenuPushVisibility(t *testing.T) {
 	}
 }
 
-// TestProjectsSectionAndSwitch 多项目时侧栏出现项目分组，切换会更换 svc 并重置状态。
-func TestProjectsSectionAndSwitch(t *testing.T) {
+// TestProjectPaneSwitch 项目区展示所有项目，点击行可切换。
+func TestProjectPaneSwitch(t *testing.T) {
 	a, _ := newFakeApp(t)
 	dirA, dirB := t.TempDir(), t.TempDir()
 	a.SetProjects([]string{dirA, dirB}, dirA)
 	if len(a.projects) != 2 {
 		t.Fatalf("项目数 = %d", len(a.projects))
 	}
-	a.rebuildSidebar()
-	lines := a.sidebarLines()
-	if len(lines) == 0 || lines[0].section != "projects" || !lines[0].header {
-		t.Fatalf("侧栏顶部缺少项目分组: %+v", lines)
-	}
-	if !strings.Contains(lines[0].text, "2") {
-		t.Fatalf("项目分组计数错误: %q", lines[0].text)
+	if a.panelLayout().projH < 3 {
+		t.Fatalf("项目区高度 = %d", a.panelLayout().projH)
 	}
 	next := &fakeSvc{status: git.Status{Branch: "dev"}}
 	a.openRepo = func(path string) (git.Service, error) { return next, nil }
 	idx := a.projectIndex(dirB)
-	cmd := a.switchProject(idx)
-	if cmd == nil {
-		t.Fatal("切换项目未返回刷新命令")
-	}
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 1 + idx})
 	if a.svc != next || a.currentPath != cleanProjectPath(dirB) {
 		t.Fatalf("未切换到目标项目: svc=%v path=%q", a.svc, a.currentPath)
 	}
@@ -2160,37 +2158,32 @@ func TestRemoveProject(t *testing.T) {
 	if len(a.projects) != 1 {
 		t.Fatalf("移除后项目数 = %d", len(a.projects))
 	}
-	a.rebuildSidebar()
-	if lines := a.sidebarLines(); len(lines) > 0 && lines[0].section == "projects" {
-		t.Error("单项目时不应显示项目分组")
+	if a.projectIndex(cleanProjectPath(dirB)) >= 0 {
+		t.Error("已移除项目仍在列表中")
 	}
 }
 
-// TestProjectFooterMenu 底部项目名右键弹出添加/切换菜单。
-func TestProjectFooterMenu(t *testing.T) {
+// TestProjectPaneMenu 项目区标题右键提供添加项目；添加走系统选择框命令。
+func TestProjectPaneMenu(t *testing.T) {
 	a, _ := newFakeApp(t)
+	dirA := t.TempDir()
+	a.SetProjects([]string{dirA}, dirA)
 	_ = a.View()
-	if a.projectNameW == 0 {
-		t.Fatal("未记录底部项目名区域")
-	}
-	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: a.projectNameX + 1, Y: a.height - 1})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: 2, Y: 0})
 	if a.modal == nil || a.modal.kind != modalChoice {
-		t.Fatalf("底部项目名右键未弹菜单: %+v", a.modal)
+		t.Fatalf("项目区标题右键未弹菜单: %+v", a.modal)
 	}
 	found := false
 	for _, c := range a.modal.choices {
 		if strings.Contains(c.label, "添加项目") {
 			found = true
-			if cmd := c.action(a); cmd != nil {
-				t.Fatal("添加项目动作不应返回命令")
+			if cmd := c.action(a); cmd == nil {
+				t.Fatal("添加项目应返回系统选择框命令")
 			}
 		}
 	}
 	if !found {
 		t.Fatalf("菜单缺少添加项目: %+v", a.modal.choices)
-	}
-	if a.modal == nil || a.modal.kind != modalDirPicker {
-		t.Fatalf("添加项目未打开目录选择框: %+v", a.modal)
 	}
 }
 
@@ -2217,5 +2210,96 @@ func TestProjectDirPickerChoose(t *testing.T) {
 	}
 	if a.projectIndex(cleanProjectPath(dir)) < 0 {
 		t.Fatalf("项目未添加: %+v", a.projects)
+	}
+}
+
+// TestSystemDirPickAddsProject 系统目录选择结果直接添加项目。
+func TestSystemDirPickAddsProject(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dir := t.TempDir()
+	a.openRepo = func(p string) (git.Service, error) { return &fakeSvc{root: p}, nil }
+	a.pickDir = func() (string, error) { return dir, nil }
+	cmd := a.pickProjectDirCmd()
+	if cmd == nil {
+		t.Fatal("未返回系统选择框命令")
+	}
+	a.Update(cmd())
+	if a.projectIndex(cleanProjectPath(dir)) < 0 {
+		t.Fatalf("项目未添加: %+v", a.projects)
+	}
+}
+
+// TestSystemDirPickFallback 系统选择框不可用时回退内置选择器。
+func TestSystemDirPickFallback(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pickDir = func() (string, error) { return "", platform.ErrUnavailable }
+	a.Update(a.pickProjectDirCmd()())
+	if a.modal == nil || a.modal.kind != modalDirPicker {
+		t.Fatalf("未回退到内置选择器: %+v", a.modal)
+	}
+}
+
+// TestProjectPaneKeyboard 项目区上下移动不切换，Enter 才切换。
+func TestProjectPaneKeyboard(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{dirA, dirB}, dirA)
+	next := &fakeSvc{status: git.Status{Branch: "dev"}}
+	a.openRepo = func(path string) (git.Service, error) { return next, nil }
+	a.pane = PaneProjects
+	a.projectSel = a.projectIndex(cleanProjectPath(dirA))
+	old := a.currentPath
+	a.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if a.projectSel != 1 || a.currentPath != old {
+		t.Fatalf("下移后 sel=%d path=%q", a.projectSel, a.currentPath)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if a.svc != next {
+		t.Fatal("Enter 未切换项目")
+	}
+}
+
+// TestProjectPaneMenuRemove 非当前项目菜单可移除。
+func TestProjectPaneMenuRemove(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{dirA, dirB}, dirA)
+	a.pane = PaneProjects
+	a.projectSel = a.projectIndex(cleanProjectPath(dirB))
+	a.openProjectMenu()
+	if a.modal == nil {
+		t.Fatal("项目菜单未打开")
+	}
+	removed := false
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "移除项目") {
+			removed = true
+			_ = c.action(a)
+		}
+	}
+	if !removed {
+		t.Fatalf("菜单缺少移除项: %+v", a.modal.choices)
+	}
+	if a.projectIndex(cleanProjectPath(dirB)) >= 0 {
+		t.Error("项目未移除")
+	}
+}
+
+// TestProjectPaneScroll 项目多时滚动可视区跟随选择。
+func TestProjectPaneScroll(t *testing.T) {
+	a, _ := newFakeApp(t)
+	var dirs []string
+	for i := 0; i < 10; i++ {
+		dirs = append(dirs, t.TempDir())
+	}
+	a.SetProjects(dirs, dirs[0])
+	a.pane = PaneProjects
+	a.projectSel = len(a.projects) - 1
+	a.ensureProjectVisible()
+	if a.projectOff == 0 {
+		t.Fatal("项目区未滚动")
+	}
+	if h := a.projectViewHeight(); a.projectSel >= a.projectOff+h {
+		t.Fatalf("最后一项不可见: sel=%d off=%d h=%d", a.projectSel, a.projectOff, h)
 	}
 }

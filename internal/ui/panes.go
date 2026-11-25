@@ -26,8 +26,9 @@ func (a *App) paneBoxes() []paneBox {
 	fw := a.drawerSplit(l.rightW)
 	rx := l.leftW + 1
 	boxes := []paneBox{
-		{PaneBranches, 0, 0, l.leftW, l.leftTopH},
-		{PaneInfo, 0, l.leftTopH + 1, l.leftW, l.leftBotH},
+		{PaneProjects, 0, 0, l.leftW, l.projH},
+		{PaneBranches, 0, l.projH + 1, l.leftW, l.leftTopH},
+		{PaneInfo, 0, l.projH + 1 + l.leftTopH + 1, l.leftW, l.leftBotH},
 		{PaneCommits, rx, 0, l.rightW, l.rightTopH},
 		{PaneFiles, rx, l.rightTopH + 1, fw, l.drawerH},
 		{PaneContent, rx + fw + 1, l.rightTopH + 1, l.rightW - fw - 1, l.drawerH},
@@ -41,6 +42,8 @@ func (a *App) paneBoxes() []paneBox {
 // paneTitle 返回区域中文标题。
 func (a *App) paneTitle(p Pane) string {
 	switch p {
+	case PaneProjects:
+		return i18n.S("项目", "Projects")
 	case PaneBranches:
 		return i18n.S("分支", "Branches")
 	case PaneChanges:
@@ -79,6 +82,11 @@ func (a *App) paneTitle(p Pane) string {
 // paneInfo 返回区域右下角基本信息。
 func (a *App) paneInfo(p Pane) string {
 	switch p {
+	case PaneProjects:
+		if len(a.projects) == 0 {
+			return "0 of 0"
+		}
+		return fmt.Sprintf("%d of %d", minInt(a.projectSel+1, len(a.projects)), len(a.projects))
 	case PaneBranches:
 		if len(a.sideItems) == 0 {
 			return "0 of 0"
@@ -180,6 +188,8 @@ func (a *App) paneContent(p Pane, w, h int) []string {
 	}
 	var raw string
 	switch p {
+	case PaneProjects:
+		raw = a.viewProjectsPanel(w, h+1)
 	case PaneBranches:
 		raw = a.viewBranchesPanel(w, h+1)
 	case PaneChanges:

@@ -163,15 +163,18 @@ func TestSevenPaneCycle(t *testing.T) {
 	a.commands = []commandEntry{{at: time.Now(), line: "git status"}}
 	a.pane = PaneBranches
 	seen := map[Pane]bool{}
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 7; i++ {
 		seen[a.pane] = true
 		a.nextPane(1)
 	}
-	if len(seen) != 6 {
-		t.Errorf("Tab 循环覆盖 %d 个区域，期望 6", len(seen))
+	if len(seen) != 7 {
+		t.Errorf("Tab 循环覆盖 %d 个区域，期望 7", len(seen))
 	}
 	if seen[PaneChanges] {
 		t.Error("已移除的改动区不应进入 Tab 循环")
+	}
+	if !seen[PaneProjects] {
+		t.Error("Tab 循环应包含项目区")
 	}
 }
 
@@ -395,7 +398,7 @@ func TestDividerHoverAndDragHighlight(t *testing.T) {
 	a.dragMode = 0
 	a.hoverDiv = 0
 	l = a.panelLayout()
-	a.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: 4, Y: l.leftTopH})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: 4, Y: l.projH + 1 + l.leftTopH})
 	if a.hoverDiv != 4 {
 		t.Fatalf("hoverDiv = %d, 期望 4", a.hoverDiv)
 	}

@@ -561,7 +561,22 @@ func (a *App) resetForProject() {
 	a.invalidateView()
 }
 
-// openProjectPicker 打开目录选择对话框。
+// dirPickedMsg 是系统目录选择框的结果。
+type dirPickedMsg struct {
+	path string
+	err  error
+}
+
+// pickProjectDirCmd 调用系统目录选择框。
+func (a *App) pickProjectDirCmd() tea.Cmd {
+	pick := a.pickDir
+	return func() tea.Msg {
+		path, err := pick()
+		return dirPickedMsg{path: path, err: err}
+	}
+}
+
+// openProjectPicker 打开内置目录选择对话框（系统选择框不可用时兜底）。
 func (a *App) openProjectPicker() {
 	dir, err := os.UserHomeDir()
 	if err != nil || dir == "" {
@@ -610,6 +625,8 @@ func (a *App) chooseProjectDir(dir string) tea.Cmd {
 	if err != nil {
 		if a.modal != nil && a.modal.kind == modalDirPicker {
 			a.modal.err = i18n.S("不是有效的 git 仓库", "not a git repository")
+		} else {
+			a.setToast(i18n.S("不是有效的 git 仓库: ", "not a git repository: ")+firstLine(err.Error()), true)
 		}
 		return nil
 	}
@@ -619,6 +636,8 @@ func (a *App) chooseProjectDir(dir string) tea.Cmd {
 	if a.projectIndex(p) >= 0 {
 		if a.modal != nil && a.modal.kind == modalDirPicker {
 			a.modal.err = i18n.S("项目已在列表中", "project already added")
+		} else {
+			a.setToast(i18n.S("项目已在列表中", "project already added"), false)
 		}
 		return nil
 	}
