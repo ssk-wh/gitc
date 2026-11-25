@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -19,6 +20,9 @@ func (a *App) openContextMenu() tea.Cmd {
 		it := a.selectedSideItem()
 		if it == nil {
 			return nil
+		}
+		if it.kind == sideTag {
+			return a.openTagMenuCmd(it.ref)
 		}
 		a.choose(a.branchMenuTitle(it), a.branchMenuChoices(it))
 	case PaneCommits:
@@ -58,6 +62,51 @@ func (a *App) openContextMenu() tea.Cmd {
 		a.choose(fmt.Sprintf(i18n.S("文件 %s", "file %s"), sanitize.Line(n.path)), a.fileNodeMenuChoices(n, a.filesOwner == "work"))
 	}
 	return nil
+}
+
+// tagMenuChoices 生成标签菜单；pushed 表示 origin 已存在该标签。
+func (a *App) tagMenuChoices(ref git.Ref, pushed bool) []choice {
+	out := []choice{
+		{label: i18n.S("检出该标签", "checkout tag"), action: func(a *App) tea.Cmd {
+			return a.runOp("checkout "+ref.Name, func(ctx context.Context) (string, error) {
+				return a.svc.Checkout(ctx, ref.Name)
+			})
+		}},
+	}
+	if !pushed {
+		out = append(out, choice{label: i18n.S("推送标签到 origin", "push tag"), action: func(a *App) tea.Cmd {
+			return a.pushTag(ref)
+		}})
+	}
+	out = append(out,
+		choice{label: i18n.S("删除标签", "delete tag"), action: func(a *App) tea.Cmd {
+			return a.sidebarDelete(&sideItem{kind: sideTag, ref: ref})
+		}},
+		choice{label: i18n.S("复制名称", "copy name"), action: func(a *App) tea.Cmd {
+			return a.copyToClipboard(ref.Name)
+		}},
+	)
+	return out
+}
+
+// remoteTagMsg 是远端标签存在性检查结果。
+type remoteTagMsg struct {
+	name   string
+	exists bool
+	err    error
+}
+
+// openTagMenuCmd 先异步检查 origin 上是否已有该标签，再打开菜单。
+func (a *App) openTagMenuCmd(ref git.Ref) tea.Cmd {
+	a.setToast(i18n.S("检查远端标签 "+ref.Name+"…", "checking remote tag "+ref.Name+"…"), false)
+	svc := a.svc
+	name := ref.Name
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		out, err := svc.RunGitArgs(ctx, []string{"ls-remote", "--tags", "--refs", "origin", "refs/tags/" + name})
+		return remoteTagMsg{name: name, exists: strings.TrimSpace(out) != "", err: err}
+	}
 }
 
 func (a *App) branchMenuTitle(it *sideItem) string {
@@ -174,22 +223,7 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 			}},
 		}
 	case sideTag:
-		return []choice{
-			{label: i18n.S("检出该标签", "checkout tag"), action: func(a *App) tea.Cmd {
-				return a.runOp("checkout "+ref.Name, func(ctx context.Context) (string, error) {
-					return a.svc.Checkout(ctx, ref.Name)
-				})
-			}},
-			{label: i18n.S("推送标签到 origin", "push tag"), action: func(a *App) tea.Cmd {
-				return a.pushTag(ref)
-			}},
-			{label: i18n.S("删除标签", "delete tag"), action: func(a *App) tea.Cmd {
-				return a.sidebarDelete(&sideItem{kind: sideTag, ref: ref})
-			}},
-			{label: i18n.S("复制名称", "copy name"), action: func(a *App) tea.Cmd {
-				return a.copyToClipboard(ref.Name)
-			}},
-		}
+		return a.tagMenuChoices(ref, false)
 	case sideStash:
 		st := it.stash
 		return []choice{
