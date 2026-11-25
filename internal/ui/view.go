@@ -1324,12 +1324,19 @@ func helpLines() []string {
 		{"T", i18n.S("切换主题（default/light/ocean/forest/fire/rose/high-contrast）", "cycle theme")},
 		{"L / R / ?", i18n.S("命令日志 / 刷新 / 帮助", "command log / refresh / help")},
 		{"q / Ctrl+C", i18n.S("退出", "quit")},
-		{"GitHub", "https://github.com/ssk-wh/gitc"},
-		{"Releases", "https://github.com/ssk-wh/gitc/releases"},
-		{"Issues", "https://github.com/ssk-wh/gitc/issues"},
-		{"升级", i18n.S("gitc --update（或重新运行安装脚本）", "gitc --update (or rerun the installer)")},
 	}
-	lines := make([]string, 0, len(rows)+2)
+	// 顶部独立区域：项目与 GitHub 信息
+	lines := []string{
+		"  " + styleTitle.Render(i18n.S("项目信息", "Project")),
+		"  " + styleAccent.Render(padRight("GitHub", 12)) + "https://github.com/ssk-wh/gitc",
+		"  " + styleAccent.Render(padRight(i18n.S("发布页", "Releases"), 12)) + "https://github.com/ssk-wh/gitc/releases",
+		"  " + styleAccent.Render(padRight(i18n.S("问题反馈", "Issues"), 12)) + "https://github.com/ssk-wh/gitc/issues",
+		"  " + styleAccent.Render(padRight(i18n.S("升级", "Update"), 12)) + i18n.S("gitc --update（或重新运行安装脚本）", "gitc --update (or rerun the installer)"),
+		"",
+		"  " + styleDim.Render(strings.Repeat("─", 64)),
+		"",
+		"  " + styleTitle.Render(i18n.S("快捷键", "Keybindings")),
+	}
 	for _, r := range rows {
 		lines = append(lines, "  "+styleAccent.Render(padRight(r[0], 22))+r[1])
 	}
