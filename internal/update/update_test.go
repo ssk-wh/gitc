@@ -211,3 +211,30 @@ func TestLatestTagFromHTML(t *testing.T) {
 		t.Fatalf("tag = %q, 期望 v3.1.4", tag)
 	}
 }
+
+
+func TestLatestTagFromAtom(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ssk-wh/gitc/releases/latest":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<html><script>var u = '/releases/tag/' + parts.slice(4).join('/');</script></html>`)
+		case "/ssk-wh/gitc/releases.atom":
+			w.Header().Set("Content-Type", "application/atom+xml")
+			fmt.Fprint(w, `<feed><entry><title>gitc v4.5.6</title><link href="https://github.com/ssk-wh/gitc/releases/tag/v4.5.6"/></entry></feed>`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	tag, err := latestTag(context.Background(), Options{
+		Repo: "ssk-wh/gitc", BaseURL: srv.URL, APIBase: srv.URL,
+		Client: srv.Client(), Mirror: "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag != "v4.5.6" {
+		t.Fatalf("tag = %q, 期望 v4.5.6", tag)
+	}
+}
