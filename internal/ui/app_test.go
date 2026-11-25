@@ -2004,3 +2004,35 @@ func TestHelpProjectInfoFirst(t *testing.T) {
 		t.Fatalf("GitHub 信息应位于快捷键之前: github=%d keys=%d", github, keys)
 	}
 }
+
+// TestTagMenuHidesPushedPush 远端已存在的标签不再显示“推送标签到 origin”。
+func TestTagMenuHidesPushedPush(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pane = PaneBranches
+	for i, it := range a.sideItems {
+		if it.kind == sideTag && it.ref.Name == "v1.0" {
+			a.sideSel = i
+			a.sideSelKey = it.key
+			break
+		}
+	}
+	a.Update(remoteTagMsg{name: "v1.0", exists: true})
+	if a.modal == nil {
+		t.Fatal("未打开标签菜单")
+	}
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "推送标签") {
+			t.Fatalf("已推送标签仍显示推送项: %+v", a.modal.choices)
+		}
+	}
+	a.Update(remoteTagMsg{name: "v1.0", exists: false})
+	found := false
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "推送标签") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("远端不存在时应显示推送项: %+v", a.modal.choices)
+	}
+}
