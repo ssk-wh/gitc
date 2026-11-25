@@ -53,7 +53,8 @@ gitc                # 进入交互工作台
 gitc -C /path/repo  # 指定仓库
 gitc --lang zh      # 中文界面（默认跟随 LANG / 系统语言）
 gitc --theme ocean  # 主题：default / light / ocean / forest / fire / rose / high-contrast
-gitc --check        # headless：输出仓库摘要后退出（CI/脚本）
+gitc --update       # 检测最新 Release 并自动下载安装
+# gitc --check      # headless：输出仓库摘要后退出（CI/脚本）
 gitc --version
 ```
 

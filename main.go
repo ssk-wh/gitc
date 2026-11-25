@@ -14,6 +14,7 @@ import (
 	"github.com/ssk-wh/gitc/internal/git"
 	"github.com/ssk-wh/gitc/internal/i18n"
 	"github.com/ssk-wh/gitc/internal/ui"
+	"github.com/ssk-wh/gitc/internal/update"
 )
 
 // version 由 release 构建通过 -ldflags "-X main.version=vX.Y.Z" 注入；
@@ -32,12 +33,25 @@ func main() {
 	lang := flag.String("lang", "", "界面语言（zh/en）")
 	theme := flag.String("theme", "", "主题：default/light/high-contrast")
 	showVersion := flag.Bool("version", false, "显示版本")
+	doUpdate := flag.Bool("update", false, "检测并安装最新版本")
 	check := flag.Bool("check", false, "输出仓库摘要后退出（headless）")
 	flag.Usage = usage
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("gitc", displayVersion())
+		return
+	}
+	if *doUpdate {
+		err := update.Run(context.Background(), update.Options{
+			Repo:    os.Getenv("GITC_REPO"),
+			Mirror:  os.Getenv("GITC_MIRROR"),
+			Current: version,
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "gitc:", err)
+			os.Exit(1)
+		}
 		return
 	}
 	i18n.Set(i18n.Detect())
@@ -98,6 +112,7 @@ func usage() {
   --lang <l>     界面语言：zh / en（默认跟随 LANG）
   --theme <名>   主题：default / light / ocean / forest / fire / rose / high-contrast（覆盖配置）
   --check        输出仓库摘要后退出（供 CI/脚本使用）
+  --update       检测并安装最新版本
   --version      显示版本
 `, displayVersion())
 }
