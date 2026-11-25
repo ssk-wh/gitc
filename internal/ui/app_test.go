@@ -19,6 +19,15 @@ import (
 	"github.com/ssk-wh/gitc/internal/workspace"
 )
 
+// isolateConfig 把配置目录指向临时目录，避免测试污染真实配置。
+func isolateConfig(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("AppData", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+}
+
 // fakeSvc 是测试用假服务：读接口返回预置数据，写接口记录调用。
 type fakeSvc struct {
 	git.Service
@@ -2363,6 +2372,7 @@ func TestLoadProjectBranches(t *testing.T) {
 
 // TestWorkspaceStartupAndAdd 启动读取 .gitc-workspace，添加项目时写回。
 func TestWorkspaceStartupAndAdd(t *testing.T) {
+	isolateConfig(t)
 	root := t.TempDir()
 	other := t.TempDir()
 	if err := workspace.Save(root, []string{root, other}); err != nil {

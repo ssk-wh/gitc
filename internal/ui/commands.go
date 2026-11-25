@@ -551,8 +551,6 @@ func (a *App) switchProject(idx int) tea.Cmd {
 	a.SetProjects(paths, root)
 	a.sideSelKey = "p:" + root
 	a.rebuildSidebar()
-	a.cfg.Projects = a.ProjectPaths()
-	a.cfg.LastProject = p.Path
 	a.saveConfig()
 	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.loadProjectBranchesCmd())
 }
@@ -717,7 +715,6 @@ func (a *App) chooseProjectDir(dir string) tea.Cmd {
 		return nil
 	}
 	a.projects = append(a.projects, projectEntry{Name: filepath.Base(p), Path: p})
-	a.cfg.Projects = a.ProjectPaths()
 	a.saveConfig()
 	a.saveWorkspace()
 	a.rebuildSidebar()
@@ -739,7 +736,6 @@ func (a *App) removeProject(p projectEntry) tea.Cmd {
 		}
 	}
 	a.projects = out
-	a.cfg.Projects = a.ProjectPaths()
 	a.saveConfig()
 	a.saveWorkspace()
 	a.rebuildSidebar()

@@ -38,8 +38,9 @@ func (a *App) saveConfig() {
 	a.cfg.CommandH = a.cmdH
 	a.cfg.Theme = a.themeName
 	a.cfg.Colors = a.themeColors
-	a.cfg.Projects = a.ProjectPaths()
-	a.cfg.LastProject = a.currentPath
+	// 项目列表由各仓库的 .gitc-workspace 管理，不写入全局配置，避免跨仓库污染
+	a.cfg.Projects = nil
+	a.cfg.LastProject = ""
 	_ = config.Save(a.cfg)
 }
 
