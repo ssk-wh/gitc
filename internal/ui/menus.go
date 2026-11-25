@@ -17,7 +17,7 @@ import (
 func (a *App) openContextMenu() tea.Cmd {
 	switch a.pane {
 	case PaneProjects:
-		a.openProjectMenu()
+		a.openProjectMenu(-1)
 	case PaneBranches:
 		it := a.selectedSideItem()
 		if it == nil {
@@ -681,14 +681,30 @@ func (a *App) discardAllPrompt() {
 }
 
 // openBranchesHeaderMenu 是 BRANCHES 标题的整体菜单。
-// openProjectMenu 是左上角项目区标题右键菜单。
-func (a *App) openProjectMenu() {
+// openProjectMenu 以 focus 项目为基准生成菜单（-1 表示当前项目）。
+func (a *App) openProjectMenu(focus int) {
+	if focus < 0 || focus >= len(a.projects) {
+		focus = a.projectIndex(a.currentPath)
+	}
+	if focus >= 0 {
+		a.projectSel = focus
+	}
+	title := i18n.S("项目 "+a.svc.Name(), "projects")
+	if focus >= 0 {
+		title = i18n.S("项目 "+a.projects[focus].Name, "project "+a.projects[focus].Name)
+	}
 	choices := []choice{{label: i18n.S("添加项目…", "add project..."), action: func(a *App) tea.Cmd {
 		a.setToast(i18n.S("请在弹出的系统对话框中选择项目目录…", "choose a project directory in the system dialog..."), false)
 		return a.pickProjectDirCmd()
 	}}}
-	for _, p := range a.projects {
-		if p.Path == a.currentPath {
+	if focus >= 0 && a.projects[focus].Path != a.currentPath {
+		p := a.projects[focus]
+		choices = append(choices, choice{label: i18n.S("切换到 "+p.Name, "switch to "+p.Name), action: func(a *App) tea.Cmd {
+			return a.switchProject(a.projectIndex(p.Path))
+		}})
+	}
+	for i, p := range a.projects {
+		if i == focus || p.Path == a.currentPath {
 			continue
 		}
 		p := p
@@ -696,13 +712,13 @@ func (a *App) openProjectMenu() {
 			return a.switchProject(a.projectIndex(p.Path))
 		}})
 	}
-	if a.projectSel >= 0 && a.projectSel < len(a.projects) && a.projects[a.projectSel].Path != a.currentPath {
-		p := a.projects[a.projectSel]
+	if focus >= 0 && a.projects[focus].Path != a.currentPath {
+		p := a.projects[focus]
 		choices = append(choices, choice{label: i18n.S("移除项目 "+p.Name, "remove project "+p.Name), action: func(a *App) tea.Cmd {
 			return a.removeProject(p)
 		}})
 	}
-	a.choose(i18n.S("项目 "+a.svc.Name(), "projects"), choices)
+	a.choose(title, choices)
 }
 
 func (a *App) openBranchesHeaderMenu() {

@@ -16,6 +16,7 @@ import (
 	"github.com/ssk-wh/gitc/internal/git"
 	"github.com/ssk-wh/gitc/internal/i18n"
 	"github.com/ssk-wh/gitc/internal/platform"
+	"github.com/ssk-wh/gitc/internal/workspace"
 )
 
 // fakeSvc 是测试用假服务：读接口返回预置数据，写接口记录调用。
@@ -1137,16 +1138,24 @@ func TestTabAndAltFocus(t *testing.T) {
 		t.Fatalf("提交 alt+down = %v, 期望文件区", a.pane)
 	}
 	sendKey(a, tea.KeyMsg{Type: tea.KeyDown, Alt: true})
+	if a.pane != PaneContent {
+		t.Fatalf("文件 alt+down = %v, 期望内容区", a.pane)
+	}
+	sendKey(a, tea.KeyMsg{Type: tea.KeyDown, Alt: true})
 	if a.pane != PaneLog {
-		t.Fatalf("文件 alt+down = %v, 期望命令区", a.pane)
+		t.Fatalf("内容 alt+down = %v, 期望命令区", a.pane)
 	}
 	sendKey(a, tea.KeyMsg{Type: tea.KeyUp, Alt: true})
-	if a.pane != PaneFiles {
-		t.Fatalf("命令 alt+up = %v, 期望文件区", a.pane)
+	if a.pane != PaneContent {
+		t.Fatalf("命令 alt+up = %v, 期望内容区", a.pane)
 	}
 	sendKey(a, tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
-	if a.pane != PaneBranches {
-		t.Fatalf("文件 alt+left = %v, 期望分支区", a.pane)
+	if a.pane != PaneFiles {
+		t.Fatalf("内容 alt+left = %v, 期望文件区", a.pane)
+	}
+	sendKey(a, tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
+	if a.pane != PaneInfo {
+		t.Fatalf("文件 alt+left = %v, 期望提交信息区", a.pane)
 	}
 }
 
@@ -2132,7 +2141,7 @@ func TestProjectPaneSwitch(t *testing.T) {
 	if a.panelLayout().projH < 3 {
 		t.Fatalf("项目区高度 = %d", a.panelLayout().projH)
 	}
-	next := &fakeSvc{status: git.Status{Branch: "dev"}}
+	next := &fakeSvc{root: dirB, status: git.Status{Branch: "dev"}}
 	a.openRepo = func(path string) (git.Service, error) { return next, nil }
 	idx := a.projectIndex(dirB)
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: 1 + idx})
@@ -2266,7 +2275,7 @@ func TestProjectPaneMenuRemove(t *testing.T) {
 	a.SetProjects([]string{dirA, dirB}, dirA)
 	a.pane = PaneProjects
 	a.projectSel = a.projectIndex(cleanProjectPath(dirB))
-	a.openProjectMenu()
+	a.openProjectMenu(a.projectSel)
 	if a.modal == nil {
 		t.Fatal("项目菜单未打开")
 	}
@@ -2301,5 +2310,181 @@ func TestProjectPaneScroll(t *testing.T) {
 	}
 	if h := a.projectViewHeight(); a.projectSel >= a.projectOff+h {
 		t.Fatalf("最后一项不可见: sel=%d off=%d h=%d", a.projectSel, a.projectOff, h)
+	}
+}
+
+// TestProjectBranchesTwoColumns 项目行显示名称与分支两列，分支起始列对齐。
+func TestProjectBranchesTwoColumns(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{dirA, dirB}, dirA)
+	a.status.Branch = "main"
+	a.projectBranch = map[string]string{cleanProjectPath(dirA): "main", cleanProjectPath(dirB): "dev"}
+	view := ansi.Strip(a.viewProjectsPanel(40, 4))
+	lines := strings.Split(view, string(rune(10)))
+	mainCol, devCol := -1, -1
+	for _, ln := range lines {
+		if i := strings.Index(ln, "main"); i >= 0 {
+			mainCol = i
+		}
+		if i := strings.Index(ln, "dev"); i >= 0 {
+			devCol = i
+		}
+	}
+	if mainCol < 0 || devCol < 0 {
+		t.Fatalf("项目行缺少分支列: %s", view)
+	}
+	if mainCol != devCol {
+		t.Fatalf("分支列未对齐: main=%d dev=%d: %s", mainCol, devCol, view)
+	}
+}
+
+// TestLoadProjectBranches 异步命令加载所有项目当前分支。
+func TestLoadProjectBranches(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{dirA, dirB}, dirA)
+	a.openRepo = func(p string) (git.Service, error) {
+		branch := "a"
+		if strings.Contains(p, filepath.Base(dirB)) {
+			branch = "b"
+		}
+		return &fakeSvc{root: p, status: git.Status{Branch: branch}}, nil
+	}
+	cmd := a.loadProjectBranchesCmd()
+	if cmd == nil {
+		t.Fatal("未返回分支加载命令")
+	}
+	a.Update(cmd())
+	if a.projectBranch[cleanProjectPath(dirA)] == "" || a.projectBranch[cleanProjectPath(dirB)] == "" {
+		t.Fatalf("分支未加载: %+v", a.projectBranch)
+	}
+}
+
+// TestWorkspaceStartupAndAdd 启动读取 .gitc-workspace，添加项目时写回。
+func TestWorkspaceStartupAndAdd(t *testing.T) {
+	root := t.TempDir()
+	other := t.TempDir()
+	if err := workspace.Save(root, []string{root, other}); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := newFakeApp(t)
+	a.svc = &fakeSvc{root: root}
+	a.SetConfig(config.File{})
+	if a.projectIndex(cleanProjectPath(other)) < 0 {
+		t.Fatalf("未读取 workspace 项目: %+v", a.projects)
+	}
+	extra := t.TempDir()
+	a.openRepo = func(p string) (git.Service, error) { return &fakeSvc{root: p}, nil }
+	a.chooseProjectDir(extra)
+	f, err := workspace.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range f.Projects {
+		if cleanProjectPath(p) == cleanProjectPath(extra) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("workspace 未写入新项目: %+v", f.Projects)
+	}
+}
+
+// TestProjectMenuUsesClickedProject 右键菜单以被点击项目为基准。
+func TestProjectMenuUsesClickedProject(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dirs := []string{t.TempDir(), t.TempDir(), t.TempDir()}
+	a.SetProjects(dirs, dirs[0])
+	a.openProjectMenu(1)
+	if a.modal == nil {
+		t.Fatal("菜单未打开")
+	}
+	text := ""
+	for _, c := range a.modal.choices {
+		text += c.label + string(rune(10))
+	}
+	b := filepath.Base(cleanProjectPath(dirs[1]))
+	if n := strings.Count(text, "切换到 "+b); n != 1 {
+		t.Fatalf("被点击项目应只出现一次切换入口，实际 %d 次: %s", n, text)
+	}
+	if !strings.Contains(text, "移除项目 "+b) {
+		t.Fatalf("应可移除被点击项目: %s", text)
+	}
+	name := filepath.Base(cleanProjectPath(dirs[2]))
+	if !strings.Contains(text, "切换到 "+name) {
+		t.Fatalf("缺少切换到 %s: %s", name, text)
+	}
+}
+
+// TestFooterHintsRightAligned 按键说明应靠右，左侧提示过长时省略。
+func TestFooterHintsRightAligned(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a.toast = "已复制一段很长的提交信息用于测试底部截断"
+	v := ansi.Strip(a.viewFooter())
+	plain := strings.TrimRight(v, " ")
+	hint := strings.TrimRight(ansi.Strip(a.contextHints()), " ")
+	if !strings.HasSuffix(plain, hint) {
+		t.Fatalf("按键说明未靠右: %q", plain)
+	}
+	if !strings.Contains(plain, "…") {
+		t.Fatalf("左侧过长时应省略: %q", plain)
+	}
+	if strWidth(v) > a.width {
+		t.Fatalf("footer 超宽: %d", strWidth(v))
+	}
+}
+
+// TestAltFocusLayoutOrder 固定 Alt+方向键顺序：左半区自上而下，右半区自上而下、同排从左到右。
+func TestAltFocusLayoutOrder(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a.commands = []commandEntry{{at: time.Now(), line: "git status"}}
+	cases := []struct {
+		from Pane
+		dir  string
+		want Pane
+	}{
+		{PaneProjects, "down", PaneBranches},
+		{PaneBranches, "down", PaneInfo},
+		{PaneInfo, "down", PaneInfo},
+		{PaneInfo, "up", PaneBranches},
+		{PaneBranches, "up", PaneProjects},
+		{PaneProjects, "up", PaneProjects},
+
+		{PaneCommits, "down", PaneFiles},
+		{PaneFiles, "down", PaneContent},
+		{PaneContent, "down", PaneLog},
+		{PaneLog, "down", PaneLog},
+		{PaneLog, "up", PaneContent},
+		{PaneContent, "up", PaneFiles},
+		{PaneFiles, "up", PaneCommits},
+		{PaneCommits, "up", PaneCommits},
+
+		{PaneProjects, "right", PaneCommits},
+		{PaneBranches, "right", PaneCommits},
+		{PaneInfo, "right", PaneFiles},
+		{PaneFiles, "right", PaneContent},
+		{PaneContent, "right", PaneContent},
+		{PaneCommits, "left", PaneBranches},
+		{PaneFiles, "left", PaneInfo},
+		{PaneContent, "left", PaneFiles},
+		{PaneLog, "left", PaneInfo},
+	}
+	for _, c := range cases {
+		a.pane = c.from
+		a.altFocus(c.dir)
+		if a.pane != c.want {
+			t.Errorf("%v Alt+%s = %v，期望 %v", c.from, c.dir, a.pane, c.want)
+		}
+	}
+	// 无命令历史时不进入隐藏的命令区
+	a.commands = nil
+	a.pane = PaneContent
+	a.altFocus("down")
+	if a.pane != PaneContent {
+		t.Errorf("命令区隐藏时 Content Alt+Down = %v", a.pane)
 	}
 }

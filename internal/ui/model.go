@@ -275,6 +275,7 @@ type App struct {
 	projects        []projectEntry
 	projectSel      int
 	projectOff      int
+	projectBranch   map[string]string
 	currentPath     string
 	openRepo        func(string) (git.Service, error)
 	pickDir         func() (string, error)
@@ -363,6 +364,7 @@ func New(svc git.Service) *App {
 		branchColor:     map[string]int{},
 		commitAnchor:    -1,
 		remoteTagCache:  map[string]bool{},
+		projectBranch:   map[string]string{},
 		openRepo:        func(path string) (git.Service, error) { return git.Open(path) },
 		pickDir:         platform.PickDirectory,
 		changesExpanded: map[string]bool{},
@@ -381,7 +383,7 @@ func (a *App) Msgs() <-chan tea.Msg { return a.msgs }
 
 // Init 启动首屏加载。
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.checkUpdateCmd())
+	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.checkUpdateCmd(), a.loadProjectBranchesCmd())
 }
 
 // 尺寸计算
@@ -1233,47 +1235,49 @@ func (a *App) nextPane(delta int) {
 }
 
 // altFocus 处理 Alt+方向键的区域切换。
+// 布局分左右两部分：各自按“从上到下、同一行从左到右”的顺序移动。
 func (a *App) altFocus(dir string) {
-	left := a.pane == PaneProjects || a.pane == PaneBranches || a.pane == PaneInfo
-	switch dir {
-	case "up":
-		if left {
-			switch a.pane {
-			case PaneInfo:
-				a.pane = PaneBranches
-			case PaneBranches:
-				a.pane = PaneProjects
-			}
-		} else {
-			switch a.pane {
-			case PaneFiles, PaneContent:
-				a.pane = PaneCommits
-			case PaneLog:
-				a.pane = PaneFiles
+	if !a.panelLayout().split {
+		return
+	}
+	leftOrder := []Pane{PaneProjects, PaneBranches, PaneInfo}
+	rightOrder := []Pane{PaneCommits, PaneFiles, PaneContent}
+	if len(a.commands) > 0 {
+		rightOrder = append(rightOrder, PaneLog)
+	}
+	indexIn := func(order []Pane) int {
+		for i, p := range order {
+			if p == a.pane {
+				return i
 			}
 		}
-	case "down":
-		if left {
-			switch a.pane {
-			case PaneProjects:
-				a.pane = PaneBranches
-			case PaneBranches:
-				a.pane = PaneInfo
-			}
+		return -1
+	}
+	switch dir {
+	case "up", "down":
+		order := leftOrder
+		idx := indexIn(leftOrder)
+		if idx < 0 {
+			order = rightOrder
+			idx = indexIn(rightOrder)
+		}
+		if idx < 0 {
+			return
+		}
+		if dir == "down" {
+			idx++
 		} else {
-			switch a.pane {
-			case PaneCommits:
-				a.pane = PaneFiles
-			case PaneFiles, PaneContent:
-				a.pane = PaneLog
-			}
+			idx--
+		}
+		if idx >= 0 && idx < len(order) {
+			a.pane = order[idx]
 		}
 	case "left":
 		switch a.pane {
 		case PaneCommits:
 			a.pane = PaneBranches
 		case PaneFiles:
-			a.pane = PaneBranches
+			a.pane = PaneInfo
 		case PaneContent:
 			a.pane = PaneFiles
 		case PaneLog:
@@ -1281,14 +1285,12 @@ func (a *App) altFocus(dir string) {
 		}
 	case "right":
 		switch a.pane {
-		case PaneProjects:
+		case PaneProjects, PaneBranches:
 			a.pane = PaneCommits
-		case PaneBranches:
-			a.pane = PaneCommits
+		case PaneInfo:
+			a.pane = PaneFiles
 		case PaneFiles:
 			a.pane = PaneContent
-		case PaneInfo:
-			a.pane = PaneLog
 		}
 	}
 	a.ensurePaneVisible()
