@@ -275,6 +275,7 @@ type App struct {
 	projects        []projectEntry
 	projectSel      int
 	projectOff      int
+	projectBranch   map[string]string
 	currentPath     string
 	openRepo        func(string) (git.Service, error)
 	pickDir         func() (string, error)
@@ -363,6 +364,7 @@ func New(svc git.Service) *App {
 		branchColor:     map[string]int{},
 		commitAnchor:    -1,
 		remoteTagCache:  map[string]bool{},
+		projectBranch:   map[string]string{},
 		openRepo:        func(path string) (git.Service, error) { return git.Open(path) },
 		pickDir:         platform.PickDirectory,
 		changesExpanded: map[string]bool{},
