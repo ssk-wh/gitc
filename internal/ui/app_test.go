@@ -1482,6 +1482,8 @@ func TestOperationMenusCoverage(t *testing.T) {
 		}
 		return b.String()
 	}
+	// 制造一个与远端有差异的分支，确保推送/强制推送项存在
+	a.refs = append(a.refs, git.Ref{Kind: git.RefRemote, Name: "origin/feature/x", Target: "cccccccccccc3333"})
 	branch := labels(a.branchMenuChoices(&sideItem{kind: sideBranch, ref: local}))
 	for _, want := range []string{"检出", "新建", "重命名", "删除", "强制删除", "合并", "rebase", "推送", "强制推送", "上游", "复制"} {
 		if !strings.Contains(branch, want) {
@@ -2034,5 +2036,66 @@ func TestTagMenuHidesPushedPush(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("远端不存在时应显示推送项: %+v", a.modal.choices)
+	}
+}
+
+// TestParseTagInput 两行输入解析：第一行名称，第二行备注。
+func TestParseTagInput(t *testing.T) {
+	cases := []struct{ in, name, msg string }{
+		{"v1.0\n备注", "v1.0", "备注"},
+		{"v1.0", "v1.0", ""},
+		{"v1.0:备注", "v1.0", "备注"},
+		{"\n备注", "", "备注"},
+	}
+	for _, c := range cases {
+		name, msg := parseTagInput(c.in)
+		if name != c.name || msg != c.msg {
+			t.Errorf("parseTagInput(%q) = (%q,%q), 期望 (%q,%q)", c.in, name, msg, c.name, c.msg)
+		}
+	}
+}
+
+// TestTagPromptTwoLines 打标签输入框高度为两行。
+func TestTagPromptTwoLines(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.tagPrompt(&git.Commit{Hash: "aaaaaaaaaaaa1111"})
+	if a.modal == nil || a.modal.kind != modalText {
+		t.Fatalf("未打开多行输入框: %+v", a.modal)
+	}
+	if h := a.modal.text.Height(); h != 2 {
+		t.Fatalf("输入框高度 = %d，期望 2", h)
+	}
+}
+
+// TestBranchMenuPushVisibility 分支已推送时不再显示推送/强制推送。
+func TestBranchMenuPushVisibility(t *testing.T) {
+	labels := func(a *App, ref git.Ref) string {
+		var b strings.Builder
+		for _, c := range a.branchMenuChoices(&sideItem{kind: sideBranch, ref: ref}) {
+			b.WriteString(c.label + "\n")
+		}
+		return b.String()
+	}
+	a, _ := newFakeApp(t)
+	main := git.Ref{Name: "main", Kind: git.RefLocal, Target: "aaaaaaaaaaaa1111", Upstream: "origin/main"}
+	l := labels(a, main)
+	if strings.Contains(l, "推送") {
+		t.Fatalf("已推送分支仍显示推送:\n%s", l)
+	}
+
+	feat := git.Ref{Name: "feature/x", Kind: git.RefLocal, Target: "bbbbbbbbbbbb2222"}
+	l = labels(a, feat)
+	if !strings.Contains(l, "推送该分支") || strings.Contains(l, "强制推送") {
+		t.Fatalf("无远端分支菜单错误:\n%s", l)
+	}
+
+	a.refs = append(a.refs, git.Ref{Name: "origin/feature/x", Kind: git.RefRemote, Target: "bbbbbbbbbbbb2222"})
+	if l = labels(a, feat); strings.Contains(l, "推送") {
+		t.Fatalf("远端同进度仍显示推送:\n%s", l)
+	}
+	a.refs[len(a.refs)-1].Target = "cccccccccccc3333"
+	l = labels(a, feat)
+	if !strings.Contains(l, "推送该分支") || !strings.Contains(l, "强制推送") {
+		t.Fatalf("远端有差异应显示推送/强制推送:\n%s", l)
 	}
 }

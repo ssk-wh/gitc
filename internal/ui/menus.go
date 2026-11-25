@@ -64,6 +64,20 @@ func (a *App) openContextMenu() tea.Cmd {
 	return nil
 }
 
+// remoteRefForBranch 返回本地分支对应的远端跟踪引用。
+func (a *App) remoteRefForBranch(ref git.Ref) (git.Ref, bool) {
+	name := ref.Upstream
+	if name == "" {
+		name = "origin/" + ref.Name
+	}
+	for _, r := range a.refs {
+		if r.Kind == git.RefRemote && r.Name == name {
+			return r, true
+		}
+	}
+	return git.Ref{}, false
+}
+
 // tagMenuChoices 生成标签菜单；pushed 表示 origin 已存在该标签。
 func (a *App) tagMenuChoices(ref git.Ref, pushed bool) []choice {
 	out := []choice{
@@ -125,7 +139,7 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 	ref := it.ref
 	switch it.kind {
 	case sideBranch:
-		return []choice{
+		out := []choice{
 			{label: i18n.S("检出该分支", "checkout"), action: func(a *App) tea.Cmd {
 				if ref.Head {
 					a.setToast(i18n.S("已在当前分支", "already on this branch"), false)
@@ -162,23 +176,6 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 			{label: i18n.S("只看该分支的提交", "show commits of this branch"), action: func(a *App) tea.Cmd {
 				return a.setBranchFilter(ref.Name, "", ref.Name)
 			}},
-			{label: i18n.S("推送该分支到 origin", "push to origin"), action: func(a *App) tea.Cmd {
-				name := ref.Name
-				return a.runOp("push "+name, func(ctx context.Context) (string, error) {
-					return a.svc.RunGitArgs(ctx, []string{"push", "origin", name})
-				})
-			}},
-			{label: i18n.S("强制推送（--force-with-lease）", "force push (with-lease)"), action: func(a *App) tea.Cmd {
-				name := ref.Name
-				a.confirm(i18n.S("强制推送 "+name, "force push "+name),
-					i18n.S("将覆盖远端分支，使用 --force-with-lease 保护。", "Overwrites remote branch using --force-with-lease."),
-					"git push --force-with-lease origin "+name, true, func(a *App) tea.Cmd {
-						return a.runOp("push --force-with-lease "+name, func(ctx context.Context) (string, error) {
-							return a.svc.RunGitArgs(ctx, []string{"push", "--force-with-lease", "origin", name})
-						})
-					})
-				return nil
-			}},
 			{label: i18n.S("设为当前分支上游", "set as upstream"), action: func(a *App) tea.Cmd {
 				cur := a.status.Branch
 				if cur == "" {
@@ -201,6 +198,36 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 				return a.copyToClipboard(ref.Name)
 			}},
 		}
+		remote, hasRemote := a.remoteRefForBranch(ref)
+		if !hasRemote {
+			out = append(out, choice{label: i18n.S("推送该分支到 origin", "push to origin"), action: func(a *App) tea.Cmd {
+				name := ref.Name
+				return a.runOp("push "+name, func(ctx context.Context) (string, error) {
+					return a.svc.RunGitArgs(ctx, []string{"push", "origin", name})
+				})
+			}})
+		} else if remote.Target != ref.Target {
+			out = append(out,
+				choice{label: i18n.S("推送该分支到 origin", "push to origin"), action: func(a *App) tea.Cmd {
+					name := ref.Name
+					return a.runOp("push "+name, func(ctx context.Context) (string, error) {
+						return a.svc.RunGitArgs(ctx, []string{"push", "origin", name})
+					})
+				}},
+				choice{label: i18n.S("强制推送（--force-with-lease）", "force push (with-lease)"), action: func(a *App) tea.Cmd {
+					name := ref.Name
+					a.confirm(i18n.S("强制推送 "+name, "force push "+name),
+						i18n.S("将覆盖远端分支，使用 --force-with-lease 保护。", "Overwrites remote branch using --force-with-lease."),
+						"git push --force-with-lease origin "+name, true, func(a *App) tea.Cmd {
+							return a.runOp("push --force-with-lease "+name, func(ctx context.Context) (string, error) {
+								return a.svc.RunGitArgs(ctx, []string{"push", "--force-with-lease", "origin", name})
+							})
+						})
+					return nil
+				}},
+			)
+		}
+		return out
 	case sideRemote:
 		local := remoteLocalName(ref.Name)
 		return []choice{
@@ -394,19 +421,38 @@ func (a *App) forceDeleteBranch(ref git.Ref) {
 		})
 }
 
-func (a *App) tagPrompt(c *git.Commit) {
-	a.prompt(i18n.S("标签名（name 或 name:附注）", "tag name (name or name:message)"), "v1.0", "", func(a *App, v string) tea.Cmd {
-		name, msg := v, ""
-		if i := indexByte(v, ':'); i > 0 {
-			name, msg = v[:i], v[i+1:]
+// parseTagInput 解析两行输入：第一行标签名，第二行备注。
+func parseTagInput(v string) (name, msg string) {
+	nl := string(rune(10))
+	v = strings.ReplaceAll(v, string(rune(13))+nl, nl)
+	parts := strings.SplitN(v, nl, 2)
+	name = strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		msg = strings.TrimSpace(parts[1])
+	}
+	// 兼容旧的 name:message 写法
+	if len(parts) == 1 && msg == "" {
+		if i := indexByte(name, ':'); i > 0 {
+			name, msg = strings.TrimSpace(name[:i]), strings.TrimSpace(name[i+1:])
 		}
+	}
+	return name, msg
+}
+
+func (a *App) tagPrompt(c *git.Commit) {
+	a.promptText(i18n.S("打标签：第一行标签名，第二行备注（Ctrl+S 创建）", "tag: name on line 1, message on line 2 (Ctrl+S creates)"), "v1.0", "", func(a *App, v string) tea.Cmd {
+		name, msg := parseTagInput(v)
 		if name == "" {
+			a.setToast(i18n.S("标签名不能为空", "tag name required"), true)
 			return nil
 		}
 		return a.runOp("tag "+name, func(ctx context.Context) (string, error) {
 			return a.svc.CreateTag(ctx, name, c.Hash, msg)
 		})
 	})
+	if a.modal != nil && a.modal.kind == modalText {
+		a.modal.text.SetHeight(2)
+	}
 }
 
 func (a *App) cherryPickPrompt(c *git.Commit) {
