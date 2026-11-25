@@ -507,7 +507,7 @@ func (a *App) switchProject(idx int) tea.Cmd {
 	a.cfg.Projects = a.ProjectPaths()
 	a.cfg.LastProject = p.Path
 	a.saveConfig()
-	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd())
+	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.loadProjectBranchesCmd())
 }
 
 // resetForProject 清理切换仓库后不应保留的状态。
@@ -573,6 +573,34 @@ func (a *App) pickProjectDirCmd() tea.Cmd {
 	return func() tea.Msg {
 		path, err := pick()
 		return dirPickedMsg{path: path, err: err}
+	}
+}
+
+// projectBranchesMsg 是各项目当前分支的加载结果。
+type projectBranchesMsg struct {
+	branches map[string]string
+}
+
+// loadProjectBranchesCmd 异步读取所有项目的当前分支。
+func (a *App) loadProjectBranchesCmd() tea.Cmd {
+	if len(a.projects) <= 1 {
+		return nil
+	}
+	open := a.openRepo
+	projects := append([]projectEntry(nil), a.projects...)
+	return func() tea.Msg {
+		out := map[string]string{}
+		for _, p := range projects {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			svc, err := open(p.Path)
+			if err == nil {
+				if b := svc.CurrentBranch(ctx); b != "" {
+					out[p.Path] = b
+				}
+			}
+			cancel()
+		}
+		return projectBranchesMsg{branches: out}
 	}
 }
 
@@ -647,7 +675,7 @@ func (a *App) chooseProjectDir(dir string) tea.Cmd {
 	a.rebuildSidebar()
 	a.modal = nil
 	a.setToast(i18n.S("已添加项目 "+p, "project added: "+p), false)
-	return nil
+	return a.loadProjectBranchesCmd()
 }
 
 // removeProject 从列表移除项目（当前项目不可移除）。
