@@ -1833,3 +1833,23 @@ func TestFileMenuStageState(t *testing.T) {
 		t.Fatalf("部分暂存菜单 = %v", l)
 	}
 }
+
+// TestSearchResultsRightClick 搜索态下提交结果右键菜单与平时一致。
+func TestSearchResultsRightClick(t *testing.T) {
+	a, _ := newFakeApp(t)
+	l := a.panelLayout()
+	sendKey(a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	sendRunes(a, "修复")
+	if len(a.visibleCommits()) == 0 {
+		t.Fatal("搜索无结果")
+	}
+	a.graphSel = 0
+	y := 1 + a.dirtyOffset()
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: l.leftW + 3, Y: y})
+	if a.modal == nil {
+		t.Fatal("搜索态右键提交应弹出菜单")
+	}
+	if a.graphSel != a.dirtyOffset() {
+		t.Errorf("右键后选中行 = %d，期望 %d", a.graphSel, a.dirtyOffset())
+	}
+}

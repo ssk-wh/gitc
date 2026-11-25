@@ -35,7 +35,7 @@ func TestDumpRealFrames(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	lipgloss.SetHasDarkBackground(true)
 	a := New(svc)
-	a.Update(tea.WindowSizeMsg{Width: 118, Height: 36})
+	a.Update(tea.WindowSizeMsg{Width: 160, Height: 45})
 	pump(t, a, a.Init())
 	frame := func(name string) {
 		t.Helper()
