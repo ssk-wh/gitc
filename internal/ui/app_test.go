@@ -1778,3 +1778,26 @@ func TestFooterShowsBuildVersion(t *testing.T) {
 		t.Fatal("本地构建不应显示版本")
 	}
 }
+
+// TestSearchResultsClickable 搜索态下提交结果行仍可鼠标点击选择。
+func TestSearchResultsClickable(t *testing.T) {
+	a, _ := newFakeApp(t)
+	l := a.panelLayout()
+	sendKey(a, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	sendRunes(a, "修复")
+	if len(a.visibleCommits()) == 0 {
+		t.Fatal("搜索无结果，测试数据不对")
+	}
+	target := a.dirtyOffset() + 1 // 点击第二条结果
+	if target >= a.totalRows() {
+		target = a.dirtyOffset()
+	}
+	a.graphSel = 0
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: l.leftW + 3, Y: 1 + target})
+	if a.graphSel != target {
+		t.Fatalf("搜索态点击后 graphSel = %d，期望 %d", a.graphSel, target)
+	}
+	if !a.searchActive {
+		t.Error("点击结果不应退出搜索")
+	}
+}

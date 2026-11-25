@@ -1607,7 +1607,7 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	}
-	if a.overlay != overlayNone || a.searchActive {
+	if a.overlay != overlayNone {
 		switch m.Button {
 		case tea.MouseButtonWheelUp:
 			a.detail.offset -= 3
@@ -1617,6 +1617,27 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.clampOverlayScroll()
+		return a, nil
+	}
+	if a.searchActive {
+		// 搜索框激活时，提交结果列表仍支持点击/双击选择与滚轮滚动
+		switch {
+		case m.Button == tea.MouseButtonWheelUp || m.Button == tea.MouseButtonWheelDown:
+			if p, _, ok := a.hitTest(m.X, m.Y); ok && p == PaneCommits {
+				delta := 3
+				if m.Button == tea.MouseButtonWheelUp {
+					delta = -3
+				}
+				return a, a.scrollPane(p, delta)
+			}
+			return a, nil
+		case m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft:
+			if p, row, ok := a.hitTest(m.X, m.Y); ok && p == PaneCommits && row >= 0 {
+				cmd, _ := a.mouseClick(m, false)
+				return a, cmd
+			}
+			return a, nil
+		}
 		return a, nil
 	}
 	if a.panelLayout().split {
