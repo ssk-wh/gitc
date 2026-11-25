@@ -22,7 +22,10 @@ func (a *App) openContextMenu() tea.Cmd {
 			return nil
 		}
 		if it.kind == sideTag {
-			return a.openTagMenuCmd(it.ref)
+			a.tagMenuName = it.ref.Name
+			a.choose(a.branchMenuTitle(it), a.tagMenuChoices(it.ref, a.remoteTagCache[it.ref.Name]))
+			a.tagMenuModal = a.modal
+			return a.checkRemoteTagCmd(it.ref.Name)
 		}
 		a.choose(a.branchMenuTitle(it), a.branchMenuChoices(it))
 	case PaneCommits:
@@ -92,14 +95,25 @@ func (a *App) tagMenuChoices(ref git.Ref, pushed bool) []choice {
 			return a.pushTag(ref)
 		}})
 	}
-	out = append(out,
-		choice{label: i18n.S("删除标签", "delete tag"), action: func(a *App) tea.Cmd {
-			return a.sidebarDelete(&sideItem{kind: sideTag, ref: ref})
-		}},
-		choice{label: i18n.S("复制名称", "copy name"), action: func(a *App) tea.Cmd {
-			return a.copyToClipboard(ref.Name)
-		}},
-	)
+	out = append(out, choice{label: i18n.S("删除标签", "delete tag"), action: func(a *App) tea.Cmd {
+		return a.sidebarDelete(&sideItem{kind: sideTag, ref: ref})
+	}})
+	if pushed {
+		name := ref.Name
+		out = append(out, choice{label: i18n.S("删除远端标签（origin）", "delete remote tag (origin)"), action: func(a *App) tea.Cmd {
+			a.confirm(i18n.S("删除远端标签 "+name, "delete remote tag "+name),
+				i18n.S("会从 origin 删除该标签，不可恢复。", "Deletes the tag from origin; this cannot be undone."),
+				"git push origin :refs/tags/"+name, true, func(a *App) tea.Cmd {
+					return a.runOp("delete remote tag "+name, func(ctx context.Context) (string, error) {
+						return a.svc.RunGitArgs(ctx, []string{"push", "origin", ":refs/tags/" + name})
+					})
+				})
+			return nil
+		}})
+	}
+	out = append(out, choice{label: i18n.S("复制名称", "copy name"), action: func(a *App) tea.Cmd {
+		return a.copyToClipboard(ref.Name)
+	}})
 	return out
 }
 
@@ -110,11 +124,9 @@ type remoteTagMsg struct {
 	err    error
 }
 
-// openTagMenuCmd 先异步检查 origin 上是否已有该标签，再打开菜单。
-func (a *App) openTagMenuCmd(ref git.Ref) tea.Cmd {
-	a.setToast(i18n.S("检查远端标签 "+ref.Name+"…", "checking remote tag "+ref.Name+"…"), false)
+// checkRemoteTagCmd 异步检查 origin 上是否已有该标签，菜单已立即展示。
+func (a *App) checkRemoteTagCmd(name string) tea.Cmd {
 	svc := a.svc
-	name := ref.Name
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

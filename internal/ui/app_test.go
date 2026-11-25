@@ -2007,7 +2007,7 @@ func TestHelpProjectInfoFirst(t *testing.T) {
 	}
 }
 
-// TestTagMenuHidesPushedPush 远端已存在的标签不再显示“推送标签到 origin”。
+// TestTagMenuHidesPushedPush 远端已存在的标签不再显示推送，且保留删除入口。
 func TestTagMenuHidesPushedPush(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.pane = PaneBranches
@@ -2018,23 +2018,30 @@ func TestTagMenuHidesPushedPush(t *testing.T) {
 			break
 		}
 	}
-	a.Update(remoteTagMsg{name: "v1.0", exists: true})
+	_ = a.openContextMenu()
 	if a.modal == nil {
-		t.Fatal("未打开标签菜单")
+		t.Fatal("标签菜单应立即打开")
 	}
-	for _, c := range a.modal.choices {
-		if strings.Contains(c.label, "推送标签") {
-			t.Fatalf("已推送标签仍显示推送项: %+v", a.modal.choices)
+	has := func(list []choice, sub string) bool {
+		for _, c := range list {
+			if strings.Contains(c.label, sub) {
+				return true
+			}
 		}
+		return false
+	}
+	if !has(a.modal.choices, "删除标签") {
+		t.Fatalf("菜单缺少删除标签: %+v", a.modal.choices)
+	}
+	a.Update(remoteTagMsg{name: "v1.0", exists: true})
+	if has(a.modal.choices, "推送标签") {
+		t.Fatalf("已推送标签仍显示推送项: %+v", a.modal.choices)
+	}
+	if !has(a.modal.choices, "删除标签") || !has(a.modal.choices, "删除远端标签") {
+		t.Fatalf("已推送标签缺少删除入口: %+v", a.modal.choices)
 	}
 	a.Update(remoteTagMsg{name: "v1.0", exists: false})
-	found := false
-	for _, c := range a.modal.choices {
-		if strings.Contains(c.label, "推送标签") {
-			found = true
-		}
-	}
-	if !found {
+	if !has(a.modal.choices, "推送标签") {
 		t.Fatalf("远端不存在时应显示推送项: %+v", a.modal.choices)
 	}
 }

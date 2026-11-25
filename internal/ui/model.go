@@ -251,6 +251,9 @@ type App struct {
 	updateBadgeX    int
 	updateBadgeW    int
 	updateHintOn    bool
+	tagMenuName     string
+	tagMenuModal    *modal
+	remoteTagCache  map[string]bool
 	drawerLeftW     int // 抽屉文件列宽度（0 表示默认比例）
 	rightTopH       int // 提交区高度（0 表示默认比例）
 	dragMode        int // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线
@@ -280,6 +283,7 @@ func New(svc git.Service) *App {
 		commitColor:     map[string]int{},
 		branchColor:     map[string]int{},
 		commitAnchor:    -1,
+		remoteTagCache:  map[string]bool{},
 		changesExpanded: map[string]bool{},
 	}
 	a.layout = a.builder.Layout()

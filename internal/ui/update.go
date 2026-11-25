@@ -162,15 +162,34 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(a.refreshCmd(false), a.reloadLogCmd())
 
 	case remoteTagMsg:
-		it := a.selectedSideItem()
-		if it == nil || it.kind != sideTag || it.ref.Name != m.name || a.pane != PaneBranches {
+		if m.err == nil {
+			a.remoteTagCache[m.name] = m.exists
+		}
+		if a.modal == nil || a.modal != a.tagMenuModal || a.tagMenuName != m.name {
+			return a, nil
+		}
+		var ref git.Ref
+		found := false
+		for _, r := range a.refs {
+			if r.Kind == git.RefTag && r.Name == m.name {
+				ref, found = r, true
+				break
+			}
+		}
+		if !found {
 			return a, nil
 		}
 		pushed := m.exists && m.err == nil
+		a.modal.choices = a.tagMenuChoices(ref, pushed)
+		if a.modal.sel >= len(a.modal.choices) {
+			a.modal.sel = len(a.modal.choices) - 1
+		}
+		if a.modal.sel < 0 {
+			a.modal.sel = 0
+		}
 		if m.err != nil {
 			a.setToast(i18n.S("检查远端失败，仍可尝试推送: ", "remote check failed, push is still available: ")+firstLine(m.err.Error()), true)
 		}
-		a.choose(a.branchMenuTitle(it), a.tagMenuChoices(it.ref, pushed))
 		return a, nil
 
 	case updateCheckMsg:
