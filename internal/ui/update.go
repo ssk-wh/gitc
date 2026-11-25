@@ -275,6 +275,10 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.detail.offset++
 		case "up":
 			a.detail.offset--
+		case "pgdown":
+			a.detail.offset += a.pageSize()
+		case "pgup":
+			a.detail.offset -= a.pageSize()
 		case "g":
 			a.detail.offset = 0
 		case "G":
@@ -290,6 +294,10 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.detail.offset++
 		case "up":
 			a.detail.offset--
+		case "pgdown":
+			a.detail.offset += a.pageSize()
+		case "pgup":
+			a.detail.offset -= a.pageSize()
 		case "ctrl+d":
 			a.detail.offset += a.height / 2
 		case "ctrl+u":

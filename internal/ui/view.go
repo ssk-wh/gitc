@@ -62,6 +62,15 @@ func (a *App) statusLine(width int) string {
 }
 
 // viewRaw 渲染原始界面内容。
+// pageSize 是浮层整页翻页的行数。
+func (a *App) pageSize() int {
+	n := a.height - 2
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
 func (a *App) viewRaw() string {
 	if a.overlay == overlayHelp {
 		return a.viewHelp()
@@ -1229,7 +1238,7 @@ func (a *App) viewDetailOverlay() string {
 		b.WriteString(colorizeDiffLine(ln, a.width))
 		b.WriteByte('\n')
 	}
-	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  esc 返回", "↑/↓ scroll  esc back")))
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  PgUp/PgDn 翻页  esc 返回", "↑/↓ scroll  PgUp/PgDn page  esc back")))
 	return a.withOverlayScrollbar(b.String(), len(lines), off, viewH)
 }
 
@@ -1268,7 +1277,7 @@ func (a *App) viewHelp() string {
 		b.WriteString(truncate(ln, a.width))
 		b.WriteByte('\n')
 	}
-	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  esc 返回", "↑/↓ scroll  esc back")))
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  PgUp/PgDn 翻页  esc 返回", "↑/↓ scroll  PgUp/PgDn page  esc back")))
 	return b.String()
 }
 
@@ -1328,7 +1337,7 @@ func (a *App) viewLog() string {
 		b.WriteString(truncate(ln, a.width))
 		b.WriteByte('\n')
 	}
-	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  esc 返回", "↑/↓ scroll  esc back")))
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  PgUp/PgDn 翻页  esc 返回", "↑/↓ scroll  PgUp/PgDn page  esc back")))
 	return a.withOverlayScrollbar(b.String(), len(a.logs), off, viewH)
 }
 

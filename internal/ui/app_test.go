@@ -1936,3 +1936,22 @@ func TestNoEmptyFileMenu(t *testing.T) {
 		t.Fatalf("提交文件右键不应弹菜单，实际 %q", a.modal.title)
 	}
 }
+
+// TestDetailPageUpDown 详情浮层支持 PageUp/PageDown 整页翻页。
+func TestDetailPageUpDown(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.overlay = overlayDetail
+	a.detail.lines = nil
+	for i := 0; i < 200; i++ {
+		a.detail.lines = append(a.detail.lines, fmt.Sprintf("line %d", i))
+	}
+	a.detail.offset = 0
+	a.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	if a.detail.offset != a.pageSize() {
+		t.Fatalf("PageDown 后 offset = %d，期望 %d", a.detail.offset, a.pageSize())
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	if a.detail.offset != 0 {
+		t.Fatalf("PageUp 后 offset = %d，期望 0", a.detail.offset)
+	}
+}
