@@ -31,7 +31,7 @@ func (a *App) rebuildCommitColors() {
 		if c, ok := byHash[r.Target]; ok {
 			w = c.When
 		}
-			seeds = append(seeds, seed{hash: r.Target, color: a.refColorIndex(r.Kind, r.Name), when: w})
+		seeds = append(seeds, seed{hash: r.Target, color: a.refColorIndex(r.Kind, r.Name), when: w})
 	}
 	sort.SliceStable(seeds, func(i, j int) bool { return seeds[i].when.After(seeds[j].when) })
 

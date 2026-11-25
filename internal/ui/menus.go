@@ -270,12 +270,6 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 				return a.switchProject(a.projectIndex(it.project.Path))
 			}})
 		}
-		out = append(out,
-			choice{label: i18n.S("添加项目…", "add project..."), action: func(a *App) tea.Cmd {
-				a.addProjectPrompt()
-				return nil
-			}},
-		)
 		if it.project.Path != a.currentPath {
 			out = append(out, choice{label: i18n.S("移除该项目", "remove project"), action: func(a *App) tea.Cmd {
 				return a.removeProject(it.project)
@@ -685,6 +679,24 @@ func (a *App) discardAllPrompt() {
 }
 
 // openBranchesHeaderMenu 是 BRANCHES 标题的整体菜单。
+// openProjectMenu 是底部项目名右键菜单。
+func (a *App) openProjectMenu() {
+	choices := []choice{{label: i18n.S("添加项目…", "add project..."), action: func(a *App) tea.Cmd {
+		a.openProjectPicker()
+		return nil
+	}}}
+	for _, p := range a.projects {
+		if p.Path == a.currentPath {
+			continue
+		}
+		p := p
+		choices = append(choices, choice{label: i18n.S("切换到 "+p.Name, "switch to "+p.Name), action: func(a *App) tea.Cmd {
+			return a.switchProject(a.projectIndex(p.Path))
+		}})
+	}
+	a.choose(i18n.S("项目 "+a.svc.Name(), "projects"), choices)
+}
+
 func (a *App) openBranchesHeaderMenu() {
 	a.choose(i18n.S("分支（整体操作）", "branches (overall)"), []choice{
 		{label: i18n.S("全部展开", "expand all"), action: func(a *App) tea.Cmd {
@@ -697,10 +709,6 @@ func (a *App) openBranchesHeaderMenu() {
 			for _, k := range []string{"projects", "branches", "remote", "tags", "stash"} {
 				a.collapsed[k] = true
 			}
-			return nil
-		}},
-		{label: i18n.S("添加项目…", "add project..."), action: func(a *App) tea.Cmd {
-			a.addProjectPrompt()
 			return nil
 		}},
 		{label: "fetch", action: func(a *App) tea.Cmd { return a.fetch(false) }},
@@ -762,11 +770,6 @@ func (a *App) openSectionMenu(section string) {
 			choice{label: "fetch", action: func(a *App) tea.Cmd { return a.fetch(false) }},
 			choice{label: "fetch --prune", action: func(a *App) tea.Cmd { return a.fetch(true) }},
 		)
-	case "projects":
-		choices = append(choices, choice{label: i18n.S("添加项目…", "add project..."), action: func(a *App) tea.Cmd {
-			a.addProjectPrompt()
-			return nil
-		}})
 	case "tags":
 		choices = append(choices,
 			choice{label: i18n.S("在 HEAD 打标签", "tag HEAD"), action: func(a *App) tea.Cmd {

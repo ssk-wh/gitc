@@ -289,10 +289,15 @@ func (a *App) viewHeader() string {
 		a.updateBadgeW = strWidth(badge)
 		parts = append(parts, badge)
 	}
-	parts = append(parts,
-		styleAccent.Render(sanitize.Line(a.svc.Name())),
-		styleGood.Bold(true).Render(branch),
-	)
+	sep := styleDim.Render("  ·  ")
+	if prefix := strings.Join(parts, sep); prefix != "" {
+		a.projectNameX = strWidth(prefix) + strWidth(sep)
+	} else {
+		a.projectNameX = 0
+	}
+	repoPart := styleAccent.Render(sanitize.Line(a.svc.Name()))
+	a.projectNameW = strWidth(repoPart)
+	parts = append(parts, repoPart, styleGood.Bold(true).Render(branch))
 	if a.status.Upstream != "" {
 		parts = append(parts, styleDim.Render(a.status.Upstream))
 	}
@@ -1329,6 +1334,7 @@ func helpLines() []string {
 		{"M", i18n.S("冲突态 continue / abort", "resolve merge/rebase: continue / abort")},
 		{"T", i18n.S("切换主题（default/light/ocean/forest/fire/rose/high-contrast）", "cycle theme")},
 		{"L / R / ?", i18n.S("命令日志 / 刷新 / 帮助", "command log / refresh / help")},
+		{"右键底部项目名", i18n.S("添加项目 / 切换项目（目录选择框）", "add/switch projects (directory picker)")},
 		{"q / Ctrl+C", i18n.S("退出", "quit")},
 	}
 	// 顶部独立区域：项目与 GitHub 信息
@@ -1419,6 +1425,48 @@ func (a *App) viewModal() string {
 			body.WriteString("\n")
 		}
 		body.WriteString("\n" + styleAccent.Render(i18n.S("y 确认    n/esc 取消", "y confirm    n/esc cancel")))
+	case modalDirPicker:
+		body.WriteString(styleAccent.Render(truncate(m.dir, w-4)))
+		body.WriteString(string(rune(10)) + string(rune(10)))
+		entries := []string{i18n.S("✓ 使用当前目录", "✓ use this directory"), ".."}
+		for _, d := range m.dirs {
+			entries = append(entries, d+"/")
+		}
+		rows := a.height - 12
+		if rows < 5 {
+			rows = 5
+		}
+		if rows > 14 {
+			rows = 14
+		}
+		if m.sel < m.listOff {
+			m.listOff = m.sel
+		}
+		if m.sel >= m.listOff+rows {
+			m.listOff = m.sel - rows + 1
+		}
+		if m.listOff < 0 {
+			m.listOff = 0
+		}
+		end := m.listOff + rows
+		if end > len(entries) {
+			end = len(entries)
+		}
+		for i := m.listOff; i < end; i++ {
+			marker := "  "
+			style := lipgloss.NewStyle().Foreground(colorFg)
+			if i == m.sel {
+				marker = "› "
+				style = styleSel
+			}
+			body.WriteString(style.Render(truncate(marker+entries[i], w-4)))
+			body.WriteString(string(rune(10)))
+		}
+		if m.err != "" {
+			body.WriteString(styleBad.Render(truncate(m.err, w-4)))
+			body.WriteString(string(rune(10)))
+		}
+		body.WriteString(string(rune(10)) + styleDim.Render(i18n.S("↑↓ 选择  ⏎ 进入/选择  ← 上级  s 选当前  esc 取消", "↑↓ select  ⏎ enter/choose  ← up  s choose here  esc cancel")))
 	case modalChoice:
 		for i, c := range m.choices {
 			marker := "  "

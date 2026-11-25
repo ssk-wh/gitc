@@ -51,6 +51,7 @@ const (
 	modalInput
 	modalText
 	modalChoice
+	modalDirPicker
 )
 
 // choice 是选择菜单项。
@@ -77,6 +78,12 @@ type modal struct {
 
 	choices []choice
 	sel     int
+
+	// 目录选择框状态
+	dir     string
+	dirs    []string
+	listOff int
+	err     string
 }
 
 // sideKind 是侧栏条目类型。
@@ -267,6 +274,8 @@ type App struct {
 	projectSel      int
 	currentPath     string
 	openRepo        func(string) (git.Service, error)
+	projectNameX    int
+	projectNameW    int
 	drawerLeftW     int // 抽屉文件列宽度（0 表示默认比例）
 	rightTopH       int // 提交区高度（0 表示默认比例）
 	dragMode        int // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -1376,6 +1377,49 @@ func (a *App) handleModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, nil
+	case modalDirPicker:
+		entries := 2 + len(m.dirs)
+		switch k.String() {
+		case "esc", "q":
+			a.modal = nil
+		case "up":
+			if m.sel > 0 {
+				m.sel--
+			}
+		case "down":
+			if m.sel < entries-1 {
+				m.sel++
+			}
+		case "pgup":
+			m.sel -= 8
+			if m.sel < 0 {
+				m.sel = 0
+			}
+		case "pgdown":
+			m.sel += 8
+			if m.sel >= entries {
+				m.sel = entries - 1
+			}
+		case "left", "backspace":
+			parent := filepath.Dir(m.dir)
+			if parent != m.dir {
+				a.loadProjectDir(parent)
+			}
+		case "s":
+			return a, a.chooseProjectDir(m.dir)
+		case "enter", " ":
+			switch {
+			case m.sel == 0:
+				return a, a.chooseProjectDir(m.dir)
+			case m.sel == 1:
+				if parent := filepath.Dir(m.dir); parent != m.dir {
+					a.loadProjectDir(parent)
+				}
+			case m.sel-2 < len(m.dirs):
+				a.loadProjectDir(filepath.Join(m.dir, m.dirs[m.sel-2]))
+			}
+		}
+		return a, nil
 	case modalInput:
 		switch k.String() {
 		case "esc":
@@ -1681,6 +1725,13 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.clampOverlayScroll()
+		return a, nil
+	}
+	if m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonRight &&
+		!a.searchActive && a.projectNameW > 0 && m.Y == a.height-1 &&
+		m.X >= a.projectNameX && m.X < a.projectNameX+a.projectNameW {
+		a.modalAnchorX, a.modalAnchorY = m.X, m.Y
+		a.openProjectMenu()
 		return a, nil
 	}
 	if m.Action == tea.MouseActionMotion {

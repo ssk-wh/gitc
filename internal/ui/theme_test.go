@@ -50,7 +50,6 @@ func TestCycleTheme(t *testing.T) {
 	}
 }
 
-
 // TestBuiltinThemes 每套内置主题都应可用且有 20 色分支调色板。
 func TestBuiltinThemes(t *testing.T) {
 	for _, name := range ThemeOrder {

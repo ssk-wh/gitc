@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ import (
 // fakeSvc 是测试用假服务：读接口返回预置数据，写接口记录调用。
 type fakeSvc struct {
 	git.Service
+	root    string
 	commits []git.Commit
 	refs    []git.Ref
 	status  git.Status
@@ -26,8 +29,13 @@ type fakeSvc struct {
 	calls   []string
 }
 
-func (f *fakeSvc) Name() string     { return "demo" }
-func (f *fakeSvc) RootPath() string { return "/tmp/demo" }
+func (f *fakeSvc) Name() string { return "demo" }
+func (f *fakeSvc) RootPath() string {
+	if f.root != "" {
+		return f.root
+	}
+	return "/tmp/demo"
+}
 
 func (f *fakeSvc) StreamLog(ctx context.Context, max int, cb func(git.Commit) bool) error {
 	for _, c := range f.commits {
@@ -2155,5 +2163,59 @@ func TestRemoveProject(t *testing.T) {
 	a.rebuildSidebar()
 	if lines := a.sidebarLines(); len(lines) > 0 && lines[0].section == "projects" {
 		t.Error("单项目时不应显示项目分组")
+	}
+}
+
+// TestProjectFooterMenu 底部项目名右键弹出添加/切换菜单。
+func TestProjectFooterMenu(t *testing.T) {
+	a, _ := newFakeApp(t)
+	_ = a.View()
+	if a.projectNameW == 0 {
+		t.Fatal("未记录底部项目名区域")
+	}
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: a.projectNameX + 1, Y: a.height - 1})
+	if a.modal == nil || a.modal.kind != modalChoice {
+		t.Fatalf("底部项目名右键未弹菜单: %+v", a.modal)
+	}
+	found := false
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "添加项目") {
+			found = true
+			if cmd := c.action(a); cmd != nil {
+				t.Fatal("添加项目动作不应返回命令")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("菜单缺少添加项目: %+v", a.modal.choices)
+	}
+	if a.modal == nil || a.modal.kind != modalDirPicker {
+		t.Fatalf("添加项目未打开目录选择框: %+v", a.modal)
+	}
+}
+
+// TestProjectDirPickerChoose 目录选择框可直接选择当前目录添加项目。
+func TestProjectDirPickerChoose(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a.openRepo = func(p string) (git.Service, error) { return &fakeSvc{root: p}, nil }
+	a.openProjectPicker()
+	a.loadProjectDir(dir)
+	if a.modal == nil || a.modal.kind != modalDirPicker {
+		t.Fatalf("目录选择框未打开: %+v", a.modal)
+	}
+	if !strings.Contains(strings.Join(a.modal.dirs, ","), "sub") {
+		t.Fatalf("目录列表缺少 sub: %v", a.modal.dirs)
+	}
+	a.modal.sel = 0
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if a.modal != nil {
+		t.Fatalf("选择目录后模态框未关闭: %+v", a.modal)
+	}
+	if a.projectIndex(cleanProjectPath(dir)) < 0 {
+		t.Fatalf("项目未添加: %+v", a.projects)
 	}
 }

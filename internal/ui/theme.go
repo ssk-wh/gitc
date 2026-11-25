@@ -64,7 +64,7 @@ func defaultTheme() Theme {
 		Cyan:      lipgloss.AdaptiveColor{Light: "#0f766e", Dark: "#38bec9"},
 		Border:    lipgloss.AdaptiveColor{Light: "#0969da", Dark: "#3da9fc"},
 		Selection: lipgloss.AdaptiveColor{Light: "#0969da", Dark: "#38bec9"},
-		Lanes: defaultLanes,
+		Lanes:     defaultLanes,
 	}
 }
 
@@ -103,7 +103,6 @@ func highContrastTheme() Theme {
 	t.Lanes = defaultLanes
 	return t
 }
-
 
 // oceanTheme 深海蓝：冷静、专注。
 func oceanTheme() Theme {

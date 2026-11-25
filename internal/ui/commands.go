@@ -561,37 +561,74 @@ func (a *App) resetForProject() {
 	a.invalidateView()
 }
 
-// addProjectPrompt 输入路径添加一个项目。
-func (a *App) addProjectPrompt() {
-	a.prompt(i18n.S("项目仓库路径", "project repo path"), "/path/to/repo", "", func(a *App, v string) tea.Cmd {
-		p := cleanProjectPath(v)
-		if p == "" {
-			a.setToast(i18n.S("路径不能为空", "path required"), true)
-			return nil
+// openProjectPicker 打开目录选择对话框。
+func (a *App) openProjectPicker() {
+	dir, err := os.UserHomeDir()
+	if err != nil || dir == "" {
+		dir = "."
+	}
+	a.modal = &modal{kind: modalDirPicker, title: i18n.S("选择项目目录", "choose project directory")}
+	a.loadProjectDir(dir)
+}
+
+// loadProjectDir 读取目录下的子目录。
+func (a *App) loadProjectDir(dir string) {
+	m := a.modal
+	if m == nil || m.kind != modalDirPicker {
+		return
+	}
+	dir = cleanProjectPath(dir)
+	if dir == "" {
+		dir = "."
+	}
+	entries, err := os.ReadDir(dir)
+	m.dir = dir
+	m.dirs = nil
+	m.err = ""
+	m.sel = 0
+	m.listOff = 0
+	if err != nil {
+		m.err = firstLine(err.Error())
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
 		}
-		if a.projectIndex(p) >= 0 {
-			a.setToast(i18n.S("项目已在列表中", "project already added"), false)
-			return nil
-		}
-		svc, err := a.openRepo(p)
-		if err != nil {
-			a.setToast(i18n.S("不是有效的 git 仓库: ", "not a git repository: ")+firstLine(err.Error()), true)
-			return nil
-		}
-		if root := cleanProjectPath(svc.RootPath()); root != "" {
-			p = root
-		}
-		if a.projectIndex(p) >= 0 {
-			a.setToast(i18n.S("项目已在列表中", "project already added"), false)
-			return nil
-		}
-		a.projects = append(a.projects, projectEntry{Name: filepath.Base(p), Path: p})
-		a.cfg.Projects = a.ProjectPaths()
-		a.saveConfig()
-		a.rebuildSidebar()
-		a.setToast(i18n.S("已添加项目 "+p, "project added: "+p), false)
+		m.dirs = append(m.dirs, e.Name())
+	}
+	sort.Strings(m.dirs)
+}
+
+// chooseProjectDir 校验并添加目录对应的仓库。
+func (a *App) chooseProjectDir(dir string) tea.Cmd {
+	p := cleanProjectPath(dir)
+	if p == "" {
 		return nil
-	})
+	}
+	svc, err := a.openRepo(p)
+	if err != nil {
+		if a.modal != nil && a.modal.kind == modalDirPicker {
+			a.modal.err = i18n.S("不是有效的 git 仓库", "not a git repository")
+		}
+		return nil
+	}
+	if root := cleanProjectPath(svc.RootPath()); root != "" {
+		p = root
+	}
+	if a.projectIndex(p) >= 0 {
+		if a.modal != nil && a.modal.kind == modalDirPicker {
+			a.modal.err = i18n.S("项目已在列表中", "project already added")
+		}
+		return nil
+	}
+	a.projects = append(a.projects, projectEntry{Name: filepath.Base(p), Path: p})
+	a.cfg.Projects = a.ProjectPaths()
+	a.saveConfig()
+	a.rebuildSidebar()
+	a.modal = nil
+	a.setToast(i18n.S("已添加项目 "+p, "project added: "+p), false)
+	return nil
 }
 
 // removeProject 从列表移除项目（当前项目不可移除）。
