@@ -30,6 +30,8 @@ func TestDumpRealFrames(t *testing.T) {
 		t.Fatal(err)
 	}
 	i18n.Set("zh")
+	SetVersion("v0.1.4")
+	defer SetVersion("")
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	lipgloss.SetHasDarkBackground(true)
 	a := New(svc)

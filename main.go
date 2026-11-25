@@ -16,7 +16,16 @@ import (
 	"github.com/ssk-wh/gitc/internal/ui"
 )
 
-var version = "0.1.0"
+// version 由 release 构建通过 -ldflags "-X main.version=vX.Y.Z" 注入；
+// 本地构建为空，界面不显示版本号。
+var version = ""
+
+func displayVersion() string {
+	if version == "" {
+		return "dev"
+	}
+	return version
+}
 
 func main() {
 	dir := flag.String("C", ".", "仓库目录")
@@ -28,7 +37,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println("gitc", version)
+		fmt.Println("gitc", displayVersion())
 		return
 	}
 	i18n.Set(i18n.Detect())
@@ -52,6 +61,7 @@ func main() {
 		os.Exit(2)
 	}
 
+	ui.SetVersion(version)
 	app := ui.New(repo)
 	repo.SetCommandHook(app.LogCommand)
 	cfg := config.Load()
@@ -86,10 +96,10 @@ func usage() {
 选项:
   -C <dir>       指定仓库目录（默认当前目录）
   --lang <l>     界面语言：zh / en（默认跟随 LANG）
-  --theme <名>   主题：default / light / high-contrast（覆盖配置）
+  --theme <名>   主题：default / light / ocean / forest / fire / rose / high-contrast（覆盖配置）
   --check        输出仓库摘要后退出（供 CI/脚本使用）
   --version      显示版本
-`, version)
+`, displayVersion())
 }
 
 // runCheck 输出仓库摘要，便于无终端环境验证。

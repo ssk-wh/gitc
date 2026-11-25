@@ -1764,3 +1764,17 @@ func TestModalReleaseOnlyClosesChoice(t *testing.T) {
 		t.Fatal("release 在菜单外应关闭选择菜单")
 	}
 }
+
+// TestFooterShowsBuildVersion Release 构建显示版本，本地构建不显示。
+func TestFooterShowsBuildVersion(t *testing.T) {
+	t.Cleanup(func() { SetVersion("") })
+	SetVersion("v9.9.9")
+	a, _ := newFakeApp(t)
+	if v := plainView(a); !strings.Contains(v, "v9.9.9") {
+		t.Fatal("底部未显示构建版本")
+	}
+	SetVersion("")
+	if v := plainView(a); strings.Contains(v, "v9.9.9") {
+		t.Fatal("本地构建不应显示版本")
+	}
+}

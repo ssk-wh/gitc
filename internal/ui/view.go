@@ -242,6 +242,12 @@ func padRight(s string, w int) string {
 }
 
 // viewHeader 渲染顶部信息栏。
+// buildVersion 是 Release 构建注入的 tag；本地构建为空。
+var buildVersion string
+
+// SetVersion 设置界面显示的版本号（空字符串表示不显示）。
+func SetVersion(v string) { buildVersion = v }
+
 func (a *App) viewHeader() string {
 	branch := sanitize.Line(a.status.Branch)
 	if a.status.Detached {
@@ -254,11 +260,17 @@ func (a *App) viewHeader() string {
 	if branch == "" {
 		branch = "-"
 	}
-	parts := []string{
-		styleTitle.Render("gitc"),
+	parts := []string{styleTitle.Render("gitc")}
+	if v := strings.TrimSpace(buildVersion); v != "" {
+		if !strings.HasPrefix(v, "v") {
+			v = "v" + v
+		}
+		parts = append(parts, styleDim.Render(v))
+	}
+	parts = append(parts,
 		styleAccent.Render(sanitize.Line(a.svc.Name())),
 		styleGood.Bold(true).Render(branch),
-	}
+	)
 	if a.status.Upstream != "" {
 		parts = append(parts, styleDim.Render(a.status.Upstream))
 	}
