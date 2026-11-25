@@ -495,6 +495,9 @@ func (a *App) promptText(title, placeholder, initial string, onSubmit func(*App,
 }
 
 func (a *App) choose(title string, choices []choice) {
+	if len(choices) == 0 {
+		return // 没有可用操作时不弹空菜单
+	}
 	a.modal = &modal{kind: modalChoice, title: title, choices: choices}
 }
 

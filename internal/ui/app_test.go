@@ -1921,3 +1921,18 @@ func TestCommitEditMessagePrompt(t *testing.T) {
 		t.Fatalf("编辑框内容 = %q", a.modal.text.Value())
 	}
 }
+
+// TestNoEmptyFileMenu 查看提交文件时右键不应弹出空菜单。
+func TestNoEmptyFileMenu(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pane = PaneCommits
+	a.graphSel = a.dirtyOffset()
+	pump(t, a, a.loadFilesForSelection())
+	a.pane = PaneFiles
+	a.filesOwner = "c:aaaaaaaaaaaa1111"
+	a.fileSel = 0
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: a.panelLayout().leftW + 2, Y: a.panelLayout().rightTopH + 2})
+	if a.modal != nil {
+		t.Fatalf("提交文件右键不应弹菜单，实际 %q", a.modal.title)
+	}
+}
