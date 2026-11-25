@@ -211,24 +211,42 @@ func latestTag(ctx context.Context, opts Options) (string, error) {
 	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	var last error
 	for _, candidate := range withMirror(u, opts.Mirror) {
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, candidate, nil)
+		reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		req, _ := http.NewRequestWithContext(reqCtx, http.MethodGet, candidate, nil)
 		req.Header.Set("User-Agent", "gitc-updater")
 		resp, err := noRedirect.Do(req)
 		if err != nil {
+			cancel()
 			last = err
 			continue
 		}
 		if tag := tagFromURL(resp.Header.Get("Location")); tag != "" {
 			resp.Body.Close()
+			cancel()
 			return tag, nil
 		}
 		// 镜像会直接返回发布页 HTML（200），从页面里提取 tag
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 		resp.Body.Close()
+		cancel()
 		if m := tagRe.FindSubmatch(body); len(m) == 2 {
 			return string(m[1]), nil
 		}
 		last = fmt.Errorf("HTTP %d 且未找到版本号", resp.StatusCode)
+	}
+	// Atom feed 兜底（页面可能被挑战页替代）
+	atomURL := fmt.Sprintf("%s/%s/releases.atom", opts.BaseURL, opts.Repo)
+	for _, candidate := range withMirror(atomURL, opts.Mirror) {
+		reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		data, err := fetchBytes(reqCtx, opts, candidate)
+		cancel()
+		if err != nil {
+			last = err
+			continue
+		}
+		if m := tagRe.FindSubmatch(data); len(m) == 2 {
+			return string(m[1]), nil
+		}
 	}
 	// API 兜底
 	api := fmt.Sprintf("%s/repos/%s/releases/latest", opts.APIBase, opts.Repo)
