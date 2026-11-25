@@ -193,7 +193,8 @@ func TestLatestTagFromHTML(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/ssk-wh/gitc/releases/latest" {
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, `<html><link rel="canonical" href="https://github.com/ssk-wh/gitc/releases/tag/v3.1.4"></html>`)
+			fmt.Fprint(w, `<html><script>var u = '/releases/tag/' + parts.slice(4).join('/');</script>`+
+				`<link rel="canonical" href="https://github.com/ssk-wh/gitc/releases/tag/v3.1.4"></html>`)
 			return
 		}
 		http.NotFound(w, r)
