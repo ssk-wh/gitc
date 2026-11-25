@@ -1955,3 +1955,39 @@ func TestDetailPageUpDown(t *testing.T) {
 		t.Fatalf("PageUp 后 offset = %d，期望 0", a.detail.offset)
 	}
 }
+
+// TestUpdateBadgeHover 新版本徽标应可见，悬停提示 --update。
+func TestUpdateBadgeHover(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.updateAvailable = true
+	a.latestVersion = "v9.9.9"
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	_ = a.View()
+	if a.updateBadgeW == 0 {
+		t.Fatal("新版本徽标未渲染")
+	}
+	a.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: a.updateBadgeX + 1, Y: a.height - 1})
+	if !strings.Contains(a.toast, "gitc --update") {
+		t.Fatalf("悬停提示 = %q", a.toast)
+	}
+}
+
+// TestHelpContainsGitHubLinks 帮助页应包含源码/Release 地址。
+func TestHelpContainsGitHubLinks(t *testing.T) {
+	all := strings.Join(helpLines(), "\n")
+	for _, want := range []string{"https://github.com/ssk-wh/gitc", "/releases", "/issues"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("帮助页缺少 %q", want)
+		}
+	}
+}
+
+// TestUpdateCheckSkippedForLocalBuild 本地构建不做自动更新检查。
+func TestUpdateCheckSkippedForLocalBuild(t *testing.T) {
+	t.Cleanup(func() { SetVersion("") })
+	SetVersion("")
+	a, _ := newFakeApp(t)
+	if a.checkUpdateCmd() != nil {
+		t.Error("本地构建不应发起更新检查")
+	}
+}

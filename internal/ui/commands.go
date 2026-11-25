@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/ssk-wh/gitc/internal/graph"
 	"github.com/ssk-wh/gitc/internal/i18n"
 	"github.com/ssk-wh/gitc/internal/sanitize"
+	"github.com/ssk-wh/gitc/internal/update"
 )
 
 const (
@@ -444,6 +446,27 @@ func (a *App) squashPrompt() {
 			})
 		return nil
 	})
+}
+
+// updateCheckMsg 是启动时检查更新的结果。
+type updateCheckMsg struct {
+	tag   string
+	newer bool
+	err   error
+}
+
+// checkUpdateCmd 在 Release 构建启动时检查是否有新版本（失败静默）。
+func (a *App) checkUpdateCmd() tea.Cmd {
+	if buildVersion == "" {
+		return nil
+	}
+	cur := buildVersion
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		tag, newer, err := update.Check(ctx, cur, os.Getenv("GITC_REPO"), os.Getenv("GITC_MIRROR"))
+		return updateCheckMsg{tag: tag, newer: newer, err: err}
+	}
 }
 
 // —— 弹窗辅助 ——

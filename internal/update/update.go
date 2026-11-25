@@ -70,6 +70,20 @@ func (o *Options) fill() {
 	}
 }
 
+// Check 检测最新版本是否比 current 新；current 为空时不做检查。
+func Check(ctx context.Context, current, repo, mirror string) (tag string, newer bool, err error) {
+	if strings.TrimSpace(current) == "" {
+		return "", false, nil
+	}
+	opts := Options{Repo: repo, Mirror: mirror, Current: current}
+	opts.fill()
+	tag, err = latestTag(ctx, opts)
+	if err != nil {
+		return "", false, err
+	}
+	return tag, isNewer(tag, current), nil
+}
+
 // Run 检测并安装最新版本。已是最新时直接返回。
 func Run(ctx context.Context, opts Options) error {
 	opts.fill()

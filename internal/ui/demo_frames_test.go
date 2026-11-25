@@ -30,13 +30,14 @@ func TestDumpRealFrames(t *testing.T) {
 		t.Fatal(err)
 	}
 	i18n.Set("zh")
-	SetVersion("v1.0.0")
-	defer SetVersion("")
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	lipgloss.SetHasDarkBackground(true)
 	a := New(svc)
 	a.Update(tea.WindowSizeMsg{Width: 160, Height: 45})
 	pump(t, a, a.Init())
+	// 截图展示版本号；放在 Init 之后，避免测试触发联网更新检查
+	SetVersion("v1.0.1")
+	defer SetVersion("")
 	frame := func(name string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, name+".ansi"), []byte(a.View()), 0o644); err != nil {

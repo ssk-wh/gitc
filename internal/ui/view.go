@@ -250,6 +250,11 @@ func padRight(s string, w int) string {
 	return s + strings.Repeat(" ", d)
 }
 
+// updateHintText 是新版本徽标的悬停提示。
+func updateHintText(v string) string {
+	return i18n.S("新版本 "+v+" 可用：运行 gitc --update 自动升级", "new version "+v+" available: run gitc --update")
+}
+
 // viewHeader 渲染顶部信息栏。
 // buildVersion 是 Release 构建注入的 tag；本地构建为空。
 var buildVersion string
@@ -275,6 +280,14 @@ func (a *App) viewHeader() string {
 			v = "v" + v
 		}
 		parts = append(parts, styleDim.Render(v))
+	}
+	a.updateBadgeW, a.updateBadgeX = 0, 0
+	if a.updateAvailable && a.latestVersion != "" {
+		sep := styleDim.Render("  ·  ")
+		a.updateBadgeX = strWidth(strings.Join(parts, sep)) + strWidth(sep)
+		badge := styleWarn.Bold(true).Render("⬆ " + a.latestVersion)
+		a.updateBadgeW = strWidth(badge)
+		parts = append(parts, badge)
 	}
 	parts = append(parts,
 		styleAccent.Render(sanitize.Line(a.svc.Name())),
@@ -1308,9 +1321,13 @@ func helpLines() []string {
 		{"/", i18n.S("行内搜索（实时过滤，⏎ 搜全部历史）", "inline search (live filter, ⏎ full history)")},
 		{":", i18n.S("透传任意 git 参数", "raw git args")},
 		{"M", i18n.S("冲突态 continue / abort", "resolve merge/rebase: continue / abort")},
-		{"T", i18n.S("切换主题（default/light/high-contrast）", "cycle theme")},
+		{"T", i18n.S("切换主题（default/light/ocean/forest/fire/rose/high-contrast）", "cycle theme")},
 		{"L / R / ?", i18n.S("命令日志 / 刷新 / 帮助", "command log / refresh / help")},
 		{"q / Ctrl+C", i18n.S("退出", "quit")},
+		{"GitHub", "https://github.com/ssk-wh/gitc"},
+		{"Releases", "https://github.com/ssk-wh/gitc/releases"},
+		{"Issues", "https://github.com/ssk-wh/gitc/issues"},
+		{"升级", i18n.S("gitc --update（或重新运行安装脚本）", "gitc --update (or rerun the installer)")},
 	}
 	lines := make([]string, 0, len(rows)+2)
 	for _, r := range rows {

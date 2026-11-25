@@ -161,6 +161,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(a.refreshCmd(false), a.reloadLogCmd())
 
+	case updateCheckMsg:
+		if m.err == nil && m.newer && m.tag != "" {
+			a.latestVersion = m.tag
+			a.updateAvailable = true
+		}
+		return a, nil
+
 	case commitMessageMsg:
 		if m.err != nil {
 			a.setToast(firstLine(m.err.Error()), true)
@@ -1640,6 +1647,20 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		a.clampOverlayScroll()
 		return a, nil
+	}
+	if m.Action == tea.MouseActionMotion {
+		hint := updateHintText(a.latestVersion)
+		inside := a.updateAvailable && !a.searchActive && a.updateBadgeW > 0 &&
+			m.Y == a.height-1 && m.X >= a.updateBadgeX && m.X < a.updateBadgeX+a.updateBadgeW && m.X < a.width
+		if inside {
+			a.setToast(hint, false)
+			a.updateHintOn = true
+		} else if a.updateHintOn {
+			if a.toast == hint {
+				a.toast = ""
+			}
+			a.updateHintOn = false
+		}
 	}
 	if a.panelLayout().split {
 		l := a.panelLayout()

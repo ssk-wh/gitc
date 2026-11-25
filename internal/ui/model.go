@@ -246,6 +246,11 @@ type App struct {
 	changeSel       int
 	changeOff       int
 	commitAnchor    int // Ctrl 多选锚点（-1 表示未多选）
+	latestVersion   string
+	updateAvailable bool
+	updateBadgeX    int
+	updateBadgeW    int
+	updateHintOn    bool
 	drawerLeftW     int // 抽屉文件列宽度（0 表示默认比例）
 	rightTopH       int // 提交区高度（0 表示默认比例）
 	dragMode        int // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线
@@ -287,7 +292,7 @@ func (a *App) Msgs() <-chan tea.Msg { return a.msgs }
 
 // Init 启动首屏加载。
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd())
+	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.checkUpdateCmd())
 }
 
 // 尺寸计算
