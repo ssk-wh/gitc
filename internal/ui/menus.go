@@ -263,6 +263,28 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 		}
 	case sideTag:
 		return a.tagMenuChoices(ref, false)
+	case sideProject:
+		var out []choice
+		if it.project.Path != a.currentPath {
+			out = append(out, choice{label: i18n.S("切换到该项目", "switch to project"), action: func(a *App) tea.Cmd {
+				return a.switchProject(a.projectIndex(it.project.Path))
+			}})
+		}
+		out = append(out,
+			choice{label: i18n.S("添加项目…", "add project..."), action: func(a *App) tea.Cmd {
+				a.addProjectPrompt()
+				return nil
+			}},
+		)
+		if it.project.Path != a.currentPath {
+			out = append(out, choice{label: i18n.S("移除该项目", "remove project"), action: func(a *App) tea.Cmd {
+				return a.removeProject(it.project)
+			}})
+		}
+		out = append(out, choice{label: i18n.S("复制路径", "copy path"), action: func(a *App) tea.Cmd {
+			return a.copyToClipboard(it.project.Path)
+		}})
+		return out
 	case sideStash:
 		st := it.stash
 		return []choice{
@@ -672,9 +694,13 @@ func (a *App) openBranchesHeaderMenu() {
 			return nil
 		}},
 		{label: i18n.S("全部折叠", "collapse all"), action: func(a *App) tea.Cmd {
-			for _, k := range []string{"branches", "remote", "tags", "stash"} {
+			for _, k := range []string{"projects", "branches", "remote", "tags", "stash"} {
 				a.collapsed[k] = true
 			}
+			return nil
+		}},
+		{label: i18n.S("添加项目…", "add project..."), action: func(a *App) tea.Cmd {
+			a.addProjectPrompt()
 			return nil
 		}},
 		{label: "fetch", action: func(a *App) tea.Cmd { return a.fetch(false) }},
@@ -736,17 +762,16 @@ func (a *App) openSectionMenu(section string) {
 			choice{label: "fetch", action: func(a *App) tea.Cmd { return a.fetch(false) }},
 			choice{label: "fetch --prune", action: func(a *App) tea.Cmd { return a.fetch(true) }},
 		)
+	case "projects":
+		choices = append(choices, choice{label: i18n.S("添加项目…", "add project..."), action: func(a *App) tea.Cmd {
+			a.addProjectPrompt()
+			return nil
+		}})
 	case "tags":
 		choices = append(choices,
 			choice{label: i18n.S("在 HEAD 打标签", "tag HEAD"), action: func(a *App) tea.Cmd {
-				a.prompt(i18n.S("标签名（name 或 name:附注）", "tag name (name or name:message)"), "v1.0", "", func(a *App, v string) tea.Cmd {
-					name, msg := v, ""
-					for i := 0; i < len(v); i++ {
-						if v[i] == ':' {
-							name, msg = v[:i], v[i+1:]
-							break
-						}
-					}
+				a.promptText(i18n.S("打标签：第一行标签名，第二行备注（Ctrl+S 创建）", "tag: name on line 1, message on line 2 (Ctrl+S creates)"), "v1.0", "", func(a *App, v string) tea.Cmd {
+					name, msg := parseTagInput(v)
 					if name == "" {
 						return nil
 					}

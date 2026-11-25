@@ -392,6 +392,12 @@ func (a *App) viewBranchesPanel(width, height int) string {
 		}
 		name := strings.TrimLeft(it.label, " ")
 		switch it.kind {
+		case sideProject:
+			if it.project.Path == a.currentPath {
+				style = styleGood.Bold(true)
+			} else if ln.itemIdx != a.sideSel {
+				style = styleAccent
+			}
 		case sideBranch, sideRemote:
 			col := a.refColor(it.ref.Kind, it.ref.Name)
 			if it.ref.Head {

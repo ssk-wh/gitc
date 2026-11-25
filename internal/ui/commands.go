@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -467,6 +468,150 @@ func (a *App) checkUpdateCmd() tea.Cmd {
 		tag, newer, err := update.Check(ctx, cur, os.Getenv("GITC_REPO"), os.Getenv("GITC_MIRROR"))
 		return updateCheckMsg{tag: tag, newer: newer, err: err}
 	}
+}
+
+// switchProject 打开并切换到指定项目，重置该仓库的界面状态。
+func (a *App) switchProject(idx int) tea.Cmd {
+	if idx < 0 || idx >= len(a.projects) {
+		return nil
+	}
+	p := a.projects[idx]
+	if p.Path == a.currentPath {
+		return nil
+	}
+	if a.busy {
+		return a.busyToast()
+	}
+	svc, err := a.openRepo(p.Path)
+	if err != nil {
+		a.setToast(i18n.S("打开项目失败: ", "open project failed: ")+firstLine(err.Error()), true)
+		return nil
+	}
+	if a.stream != nil {
+		a.stream.cancel()
+		a.stream = nil
+	}
+	if a.opCancel != nil {
+		a.opCancel()
+		a.opCancel = nil
+	}
+	if r, ok := svc.(*git.Repo); ok {
+		r.SetCommandHook(a.LogCommand)
+	}
+	a.svc = svc
+	a.currentPath = p.Path
+	a.projectSel = idx
+	a.resetForProject()
+	a.sideSelKey = "p:" + p.Path
+	a.rebuildSidebar()
+	a.cfg.Projects = a.ProjectPaths()
+	a.cfg.LastProject = p.Path
+	a.saveConfig()
+	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd())
+}
+
+// resetForProject 清理切换仓库后不应保留的状态。
+func (a *App) resetForProject() {
+	a.refreshGen++
+	a.logGen++
+	a.searchGen++
+	a.filesGen++
+	a.contentGen++
+	a.busy = false
+	a.taskName = ""
+	a.loadingLog = false
+	a.truncated = false
+	a.commits = nil
+	a.refs = nil
+	a.status = git.Status{}
+	a.state = git.RepoState{}
+	a.stashes = nil
+	a.builder = graph.NewBuilder()
+	a.layout = a.builder.Layout()
+	a.commitColor = map[string]int{}
+	a.branchColor = map[string]int{}
+	a.files = nil
+	a.fileTree = nil
+	a.fileRows = nil
+	a.fileSel, a.fileOff, a.filesOwner = 0, 0, ""
+	a.changes = nil
+	a.changesTree = nil
+	a.changesRows = nil
+	a.changeSel, a.changeOff = 0, 0
+	a.content = detailModel{}
+	a.detail = detailModel{}
+	a.overlay = overlayNone
+	a.modal = nil
+	a.searchActive = false
+	a.filter, a.searchQuery = "", ""
+	a.searchResults = nil
+	a.searching = false
+	a.branchFilter, a.branchFilterScope, a.branchFilterLabel = "", "", ""
+	a.clearCommitSelection()
+	a.graphSel, a.graphOff, a.selHash = 0, 0, ""
+	a.sideItems = nil
+	a.sideSel, a.sideOff, a.sideSelKey = 0, 0, ""
+	a.commands = nil
+	a.logs = nil
+	a.cmdOffset = 0
+	a.infoOff = 0
+	a.expanded = map[string]bool{}
+	a.changesExpanded = map[string]bool{}
+	a.collapsed = map[string]bool{}
+	a.invalidateView()
+}
+
+// addProjectPrompt 输入路径添加一个项目。
+func (a *App) addProjectPrompt() {
+	a.prompt(i18n.S("项目仓库路径", "project repo path"), "/path/to/repo", "", func(a *App, v string) tea.Cmd {
+		p := cleanProjectPath(v)
+		if p == "" {
+			a.setToast(i18n.S("路径不能为空", "path required"), true)
+			return nil
+		}
+		if a.projectIndex(p) >= 0 {
+			a.setToast(i18n.S("项目已在列表中", "project already added"), false)
+			return nil
+		}
+		svc, err := a.openRepo(p)
+		if err != nil {
+			a.setToast(i18n.S("不是有效的 git 仓库: ", "not a git repository: ")+firstLine(err.Error()), true)
+			return nil
+		}
+		if root := cleanProjectPath(svc.RootPath()); root != "" {
+			p = root
+		}
+		if a.projectIndex(p) >= 0 {
+			a.setToast(i18n.S("项目已在列表中", "project already added"), false)
+			return nil
+		}
+		a.projects = append(a.projects, projectEntry{Name: filepath.Base(p), Path: p})
+		a.cfg.Projects = a.ProjectPaths()
+		a.saveConfig()
+		a.rebuildSidebar()
+		a.setToast(i18n.S("已添加项目 "+p, "project added: "+p), false)
+		return nil
+	})
+}
+
+// removeProject 从列表移除项目（当前项目不可移除）。
+func (a *App) removeProject(p projectEntry) tea.Cmd {
+	if p.Path == a.currentPath {
+		a.setToast(i18n.S("不能移除当前项目", "cannot remove the current project"), true)
+		return nil
+	}
+	out := a.projects[:0]
+	for _, e := range a.projects {
+		if e.Path != p.Path {
+			out = append(out, e)
+		}
+	}
+	a.projects = out
+	a.cfg.Projects = a.ProjectPaths()
+	a.saveConfig()
+	a.rebuildSidebar()
+	a.setToast(i18n.S("已移除项目 "+p.Name, "project removed: "+p.Name), false)
+	return nil
 }
 
 // —— 弹窗辅助 ——

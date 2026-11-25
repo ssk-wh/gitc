@@ -19,6 +19,7 @@ func (a *App) SetConfig(c config.File) {
 	a.leftMidH = c.LeftMid
 	a.cmdH = c.CommandH
 	a.applyThemeSettings(c.Theme, c.Colors)
+	a.SetProjects(c.Projects, a.svc.RootPath())
 	if len(a.themeBad) > 0 {
 		a.setToast("主题颜色非法并已忽略: "+strings.Join(a.themeBad, ", "), true)
 	}
@@ -37,6 +38,8 @@ func (a *App) saveConfig() {
 	a.cfg.CommandH = a.cmdH
 	a.cfg.Theme = a.themeName
 	a.cfg.Colors = a.themeColors
+	a.cfg.Projects = a.ProjectPaths()
+	a.cfg.LastProject = a.currentPath
 	_ = config.Save(a.cfg)
 }
 

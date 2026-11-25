@@ -1116,6 +1116,8 @@ func (a *App) sidebarEnter(it *sideItem) tea.Cmd {
 		return nil
 	}
 	switch it.kind {
+	case sideProject:
+		return a.switchProject(a.projectIndex(it.project.Path))
 	case sideBranch:
 		if it.ref.Head {
 			a.setToast(i18n.S("已在当前分支", "already on this branch"), false)
@@ -1184,6 +1186,8 @@ func (a *App) sidebarDelete(it *sideItem) tea.Cmd {
 		return nil
 	}
 	switch it.kind {
+	case sideProject:
+		return a.switchProject(a.projectIndex(it.project.Path))
 	case sideBranch:
 		if it.ref.Head {
 			a.setToast(i18n.S("不能删除当前分支", "cannot delete current branch"), true)
@@ -2005,6 +2009,12 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 		}
 		a.sideSel = ln.itemIdx
 		a.sideSelKey = a.sideItems[a.sideSel].key
+		if it := a.sideItems[a.sideSel]; it.kind == sideProject {
+			if !right {
+				return a.switchProject(a.projectIndex(it.project.Path)), true
+			}
+			return nil, true
+		}
 		cmd := a.selectBranchTip()
 		if !right && a.isDoubleClick("side:"+a.sideSelKey) {
 			return a.sidebarEnter(&a.sideItems[a.sideSel]), true

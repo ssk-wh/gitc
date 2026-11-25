@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -87,6 +88,7 @@ const (
 	sideTag
 	sideStash
 	sideFile
+	sideProject
 )
 
 // sideItem 是侧栏中的一个可选条目。
@@ -100,6 +102,7 @@ type sideItem struct {
 	file      git.FileChange
 	untracked bool
 	staged    bool
+	project   projectEntry
 }
 
 // detailModel 是全屏详情视图。
@@ -142,6 +145,12 @@ type fileNode struct {
 type fileRow struct {
 	node  *fileNode
 	depth int
+}
+
+// projectEntry 是一个可切换的项目仓库。
+type projectEntry struct {
+	Name string
+	Path string
 }
 
 // App 是根模型。
@@ -254,6 +263,10 @@ type App struct {
 	tagMenuName     string
 	tagMenuModal    *modal
 	remoteTagCache  map[string]bool
+	projects        []projectEntry
+	projectSel      int
+	currentPath     string
+	openRepo        func(string) (git.Service, error)
 	drawerLeftW     int // 抽屉文件列宽度（0 表示默认比例）
 	rightTopH       int // 提交区高度（0 表示默认比例）
 	dragMode        int // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线
@@ -270,6 +283,61 @@ type App struct {
 	themeBad    []string
 }
 
+// cleanProjectPath 返回规范化的绝对路径。
+func cleanProjectPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return ""
+	}
+	return filepath.Clean(abs)
+}
+
+// SetProjects 设置项目列表；当前仓库始终包含在列表中。
+func (a *App) SetProjects(paths []string, current string) {
+	cur := cleanProjectPath(current)
+	seen := map[string]bool{}
+	var out []projectEntry
+	for _, p := range paths {
+		p = cleanProjectPath(p)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, projectEntry{Name: filepath.Base(p), Path: p})
+	}
+	if cur != "" && !seen[cur] {
+		out = append(out, projectEntry{Name: filepath.Base(cur), Path: cur})
+		seen[cur] = true
+	}
+	a.projects = out
+	a.currentPath = cur
+	a.projectSel = a.projectIndex(cur)
+	a.rebuildSidebar()
+}
+
+// projectIndex 返回路径对应的项目下标。
+func (a *App) projectIndex(path string) int {
+	for i, p := range a.projects {
+		if p.Path == path {
+			return i
+		}
+	}
+	return -1
+}
+
+// ProjectPaths 返回项目路径列表（用于持久化）。
+func (a *App) ProjectPaths() []string {
+	out := make([]string, 0, len(a.projects))
+	for _, p := range a.projects {
+		out = append(out, p.Path)
+	}
+	return out
+}
+
 // New 创建应用。
 func New(svc git.Service) *App {
 	a := &App{
@@ -284,6 +352,7 @@ func New(svc git.Service) *App {
 		branchColor:     map[string]int{},
 		commitAnchor:    -1,
 		remoteTagCache:  map[string]bool{},
+		openRepo:        func(path string) (git.Service, error) { return git.Open(path) },
 		changesExpanded: map[string]bool{},
 	}
 	a.layout = a.builder.Layout()
@@ -492,6 +561,16 @@ func (a *App) rebuildSidebar() {
 	key := a.sideSelKey
 	var items []sideItem
 	add := func(it sideItem) { items = append(items, it) }
+
+	if len(a.projects) > 1 {
+		for _, p := range a.projects {
+			mark := "  "
+			if p.Path == a.currentPath {
+				mark = "* "
+			}
+			add(sideItem{kind: sideProject, label: mark + p.Name, key: "p:" + p.Path, section: "projects", project: p})
+		}
+	}
 
 	// 分支按 tip 提交时间倒序（用户要求默认按最新提交时间排序）。
 	tipTime := make(map[string]time.Time, len(a.commits))
@@ -1314,7 +1393,7 @@ type sideLine struct {
 
 func (a *App) sidebarLines() []sideLine {
 	var lines []sideLine
-	for _, sec := range []string{"branches", "remote", "tags", "stash"} {
+	for _, sec := range []string{"projects", "branches", "remote", "tags", "stash"} {
 		n := a.sectionCount(sec)
 		if n == 0 && sec != "branches" {
 			continue
@@ -1383,6 +1462,8 @@ func sectionTitle(section string, n int) string {
 		name = "TAGS"
 	case "stash":
 		name = "STASH"
+	case "projects":
+		name = i18n.S("项目", "PROJECTS")
 	case "changes":
 		name = i18n.S("CHANGES", "CHANGES")
 	}

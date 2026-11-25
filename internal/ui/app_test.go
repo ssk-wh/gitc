@@ -2106,3 +2106,54 @@ func TestBranchMenuPushVisibility(t *testing.T) {
 		t.Fatalf("远端有差异应显示推送/强制推送:\n%s", l)
 	}
 }
+
+// TestProjectsSectionAndSwitch 多项目时侧栏出现项目分组，切换会更换 svc 并重置状态。
+func TestProjectsSectionAndSwitch(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{dirA, dirB}, dirA)
+	if len(a.projects) != 2 {
+		t.Fatalf("项目数 = %d", len(a.projects))
+	}
+	a.rebuildSidebar()
+	lines := a.sidebarLines()
+	if len(lines) == 0 || lines[0].section != "projects" || !lines[0].header {
+		t.Fatalf("侧栏顶部缺少项目分组: %+v", lines)
+	}
+	if !strings.Contains(lines[0].text, "2") {
+		t.Fatalf("项目分组计数错误: %q", lines[0].text)
+	}
+	next := &fakeSvc{status: git.Status{Branch: "dev"}}
+	a.openRepo = func(path string) (git.Service, error) { return next, nil }
+	idx := a.projectIndex(dirB)
+	cmd := a.switchProject(idx)
+	if cmd == nil {
+		t.Fatal("切换项目未返回刷新命令")
+	}
+	if a.svc != next || a.currentPath != cleanProjectPath(dirB) {
+		t.Fatalf("未切换到目标项目: svc=%v path=%q", a.svc, a.currentPath)
+	}
+	if len(a.commits) != 0 || len(a.refs) != 0 {
+		t.Error("切换后旧仓库状态未清空")
+	}
+	if a.projectSel != idx {
+		t.Errorf("projectSel = %d, 期望 %d", a.projectSel, idx)
+	}
+}
+
+// TestRemoveProject 非当前项目可移除，移除后恢复单项目布局。
+func TestRemoveProject(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{dirA, dirB}, dirA)
+	if err := a.removeProject(projectEntry{Name: "b", Path: cleanProjectPath(dirB)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.projects) != 1 {
+		t.Fatalf("移除后项目数 = %d", len(a.projects))
+	}
+	a.rebuildSidebar()
+	if lines := a.sidebarLines(); len(lines) > 0 && lines[0].section == "projects" {
+		t.Error("单项目时不应显示项目分组")
+	}
+}

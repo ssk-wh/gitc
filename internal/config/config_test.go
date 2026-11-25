@@ -14,14 +14,16 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	want := File{
-		Theme:      "light",
-		Colors:     map[string]string{"accent": "#ff0000", "lane0": "#00ff00"},
-		LeftWidth:  30,
-		DrawerLeft: 24,
-		RightTop:   12,
-		LeftTop:    10,
-		LeftMid:    9,
-		CommandH:   5,
+		Theme:       "light",
+		Colors:      map[string]string{"accent": "#ff0000", "lane0": "#00ff00"},
+		LeftWidth:   30,
+		DrawerLeft:  24,
+		RightTop:    12,
+		LeftTop:     10,
+		LeftMid:     9,
+		CommandH:    5,
+		Projects:    []string{"/repo/a", "/repo/b"},
+		LastProject: "/repo/b",
 	}
 	if err := Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -36,6 +38,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.LeftWidth != 30 || got.DrawerLeft != 24 || got.RightTop != 12 ||
 		got.LeftTop != 10 || got.LeftMid != 9 || got.CommandH != 5 {
 		t.Errorf("布局字段 = %+v", got)
+	}
+	if len(got.Projects) != 2 || got.Projects[1] != "/repo/b" || got.LastProject != "/repo/b" {
+		t.Errorf("项目字段 = %+v last=%q", got.Projects, got.LastProject)
 	}
 }
 

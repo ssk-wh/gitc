@@ -22,6 +22,10 @@ type File struct {
 	LeftMid int `json:"left_mid,omitempty"`
 	// CommandH 是命令行历史区高度（0 表示默认）
 	CommandH int `json:"command_h,omitempty"`
+	// Projects 是用户配置的多个项目仓库路径
+	Projects []string `json:"projects,omitempty"`
+	// LastProject 是最后使用的项目路径
+	LastProject string `json:"last_project,omitempty"`
 }
 
 // Path 返回配置文件路径（用户配置目录/gitc/config.json）。
