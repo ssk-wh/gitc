@@ -201,7 +201,8 @@ func parseVersion(v string) []int {
 	return out
 }
 
-var tagRe = regexp.MustCompile(`/releases/tag/([^"/?#]+)`)
+// 只接受 GitHub tag 常见字符，避免把页面 JS 片段（如 '/releases/tag/' + ...）当成 tag。
+var tagRe = regexp.MustCompile(`/releases/tag/([A-Za-z0-9][A-Za-z0-9._-]*)`)
 
 // latestTag 通过 releases/latest 的 302 或发布页 HTML 获取 tag，API 仅作兜底。
 func latestTag(ctx context.Context, opts Options) (string, error) {
