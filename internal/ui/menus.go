@@ -55,11 +55,7 @@ func (a *App) openContextMenu() tea.Cmd {
 			a.choose(fmt.Sprintf(i18n.S("目录 %s", "directory %s"), sanitize.Line(n.path)), a.dirMenuChoices(n, a.filesOwner == "work"))
 			return nil
 		}
-		f := a.selectedFile()
-		if f == nil {
-			return nil
-		}
-		a.choose(fmt.Sprintf(i18n.S("文件 %s", "file %s"), sanitize.Line(f.path)), a.fileMenuChoices(*f, a.filesOwner == "work"))
+		a.choose(fmt.Sprintf(i18n.S("文件 %s", "file %s"), sanitize.Line(n.path)), a.fileNodeMenuChoices(n, a.filesOwner == "work"))
 	}
 	return nil
 }
@@ -264,6 +260,49 @@ func (a *App) commitMenuChoices(c *git.Commit) []choice {
 		{label: i18n.S("复制提交信息", "copy message"), action: func(a *App) tea.Cmd {
 			return a.copyToClipboard(c.Subject)
 		}},
+	}
+	return out
+}
+
+// fileNodeMenuChoices 根据节点下所有条目生成菜单：
+// 同时存在已暂存/未暂存条目时，两个操作都提供，避免状态显示错误。
+func (a *App) fileNodeMenuChoices(n *fileNode, working bool) []choice {
+	if n == nil || !working {
+		return nil
+	}
+	var hasStaged, hasUnstaged bool
+	var pick fileEntry
+	for _, e := range n.entries {
+		if e.staged {
+			hasStaged = true
+		} else if !hasUnstaged {
+			hasUnstaged = true
+			pick = e
+		}
+	}
+	if !hasUnstaged && len(n.entries) > 0 {
+		pick = n.entries[0]
+	}
+	path := n.path
+	var out []choice
+	if hasUnstaged {
+		out = append(out, choice{label: i18n.S("暂存该文件", "stage file"), action: func(a *App) tea.Cmd {
+			return a.runOp("stage "+path, func(ctx context.Context) (string, error) {
+				return a.svc.Stage(ctx, path)
+			})
+		}})
+	}
+	if hasStaged {
+		out = append(out, choice{label: i18n.S("取消暂存", "unstage file"), action: func(a *App) tea.Cmd {
+			return a.runOp("unstage "+path, func(ctx context.Context) (string, error) {
+				return a.svc.Unstage(ctx, path)
+			})
+		}})
+	}
+	if len(n.entries) > 0 {
+		out = append(out, choice{label: i18n.S("丢弃改动（危险）", "discard changes"), action: func(a *App) tea.Cmd {
+			return a.discardFilePrompt(pick)
+		}})
 	}
 	return out
 }

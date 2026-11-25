@@ -1801,3 +1801,35 @@ func TestSearchResultsClickable(t *testing.T) {
 		t.Error("点击结果不应退出搜索")
 	}
 }
+
+// TestFileMenuStageState 文件右键菜单应根据暂存状态显示 stage/unstage。
+func TestFileMenuStageState(t *testing.T) {
+	a, _ := newFakeApp(t)
+	labels := func(n *fileNode) []string {
+		var out []string
+		for _, c := range a.fileNodeMenuChoices(n, true) {
+			out = append(out, c.label)
+		}
+		return out
+	}
+	has := func(list []string, sub string) bool {
+		for _, s := range list {
+			if strings.Contains(s, sub) {
+				return true
+			}
+		}
+		return false
+	}
+	staged := &fileNode{name: "a.txt", path: "a.txt", entries: []fileEntry{{path: "a.txt", staged: true}}}
+	if l := labels(staged); !has(l, "取消暂存") || has(l, "暂存该文件") {
+		t.Fatalf("已暂存菜单 = %v", l)
+	}
+	unstaged := &fileNode{name: "a.txt", path: "a.txt", entries: []fileEntry{{path: "a.txt"}}}
+	if l := labels(unstaged); !has(l, "暂存该文件") || has(l, "取消暂存") {
+		t.Fatalf("未暂存菜单 = %v", l)
+	}
+	both := &fileNode{name: "a.txt", path: "a.txt", entries: []fileEntry{{path: "a.txt", staged: true}, {path: "a.txt"}}}
+	if l := labels(both); !has(l, "暂存该文件") || !has(l, "取消暂存") {
+		t.Fatalf("部分暂存菜单 = %v", l)
+	}
+}
