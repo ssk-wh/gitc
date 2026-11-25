@@ -29,7 +29,7 @@ jobs:
           else
             # 修复历史版本可能被多次追加的 Full Changelog
             body="$(gh release view "$RELEASE_TAG" --json body --jq .body)"
-            clean="$(printf '%s' "$body" | awk '!/^Full Changelog:/ || !seen[$0]++')"
+            clean="$(printf '%s' "$body" | awk 'index($0,"Full Changelog")==0 || !seen[$0]++' | cat -s)"
             if [ "$clean" != "$body" ]; then
               printf '%s' "$clean" > /tmp/release-body.md
               gh release edit "$RELEASE_TAG" --notes-file /tmp/release-body.md
@@ -43,7 +43,7 @@ jobs:
           gh release list --limit 20 --json tagName --jq '.[].tagName' | while read -r tag; do
             [ -n "$tag" ] || continue
             body="$(gh release view "$tag" --json body --jq .body)"
-            clean="$(printf '%s' "$body" | awk '!/^Full Changelog:/ || !seen[$0]++')"
+            clean="$(printf '%s' "$body" | awk 'index($0,"Full Changelog")==0 || !seen[$0]++' | cat -s)"
             if [ "$clean" != "$body" ]; then
               printf '%s' "$clean" > /tmp/release-body.md
               gh release edit "$tag" --notes-file /tmp/release-body.md
