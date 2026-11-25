@@ -70,6 +70,9 @@ if [ -z "$tag" ]; then
   tag="$(latest_tag || true)"
 fi
 
+if [ -z "$tag" ]; then
+  die "无法获取最新 release 版本号；可设置 GITC_VERSION=v0.1.3 指定版本后重试"
+fi
 if [ -n "$tag" ]; then
   name="gitc-${os}-${arch}"
   base="https://github.com/$REPO/releases/download/$tag"
@@ -86,15 +89,5 @@ if [ -n "$tag" ]; then
     install_binary "$tmp/$name"
     exit 0
   fi
-  say "release 下载失败，尝试从源码构建…"
+  die "release 下载失败。可设置 GITC_VERSION 指定版本，或设置 GITC_MIRROR 使用镜像后重试"
 fi
-
-# 回退：源码构建（需要 git + go）
-command -v git >/dev/null 2>&1 || die "没有可用的 release，且未安装 git"
-command -v go >/dev/null 2>&1 || die "没有可用的 release，且未安装 Go"
-say "从源码构建…"
-git clone --depth 1 "https://github.com/$REPO" "$tmp/src" >/dev/null 2>&1 ||
-  git clone --depth 1 "git@github.com:$REPO.git" "$tmp/src" >/dev/null 2>&1 ||
-  die "无法克隆仓库 $REPO"
-( cd "$tmp/src" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$tmp/gitc" . )
-install_binary "$tmp/gitc"

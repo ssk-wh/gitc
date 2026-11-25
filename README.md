@@ -28,7 +28,7 @@ Windows（PowerShell）：
 powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/ssk-wh/gitc/master/install.ps1 | iex"
 ```
 
-脚本会从 GitHub Releases 下载对应平台二进制（优先）或从源码构建，校验 SHA256，安装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%` 下的 gitc 目录）并写入 PATH。
+脚本会从 GitHub Releases 下载最新版本对应平台的二进制，校验 SHA256，安装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%` 下的 gitc 目录）并写入 PATH。可用 `GITC_VERSION` 指定版本、`GITC_MIRROR` 指定镜像。
 
 其他方式：
 
