@@ -12,11 +12,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ssk-wh/gitc/internal/clipboard"
+	"github.com/ssk-wh/gitc/internal/config"
 	"github.com/ssk-wh/gitc/internal/git"
 	"github.com/ssk-wh/gitc/internal/graph"
 	"github.com/ssk-wh/gitc/internal/i18n"
 	"github.com/ssk-wh/gitc/internal/sanitize"
 	"github.com/ssk-wh/gitc/internal/update"
+	"github.com/ssk-wh/gitc/internal/workspace"
 )
 
 const (
@@ -470,6 +472,43 @@ func (a *App) checkUpdateCmd() tea.Cmd {
 	}
 }
 
+// saveWorkspace 把当前项目列表写入当前仓库的 .gitc-workspace。
+func (a *App) saveWorkspace() {
+	root := cleanProjectPath(a.svc.RootPath())
+	if root == "" {
+		return
+	}
+	if err := workspace.Save(root, a.ProjectPaths()); err != nil {
+		a.setToast(i18n.S("写入 .gitc-workspace 失败: ", "write .gitc-workspace failed: ")+firstLine(err.Error()), true)
+	}
+}
+
+// loadInitialProjects 启动时优先读取当前仓库的 .gitc-workspace。
+func (a *App) loadInitialProjects(c config.File) {
+	root := a.svc.RootPath()
+	paths := c.Projects
+	if ws, err := workspace.Load(root); err == nil && len(ws.Projects) > 0 {
+		paths = ws.Projects
+	}
+	a.SetProjects(a.resolveWorkspacePaths(root, paths), root)
+}
+
+// resolveWorkspacePaths 把 workspace 中的相对路径按仓库根目录解析。
+func (a *App) resolveWorkspacePaths(root string, paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(root, p)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 // switchProject 打开并切换到指定项目，重置该仓库的界面状态。
 func (a *App) switchProject(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(a.projects) {
@@ -499,15 +538,23 @@ func (a *App) switchProject(idx int) tea.Cmd {
 		r.SetCommandHook(a.LogCommand)
 	}
 	a.svc = svc
-	a.currentPath = p.Path
-	a.projectSel = idx
+	root := cleanProjectPath(svc.RootPath())
+	if root == "" {
+		root = p.Path
+	}
+	paths := a.ProjectPaths()
+	if ws, err := workspace.Load(root); err == nil && len(ws.Projects) > 0 {
+		paths = ws.Projects
+	}
+	a.currentPath = root
 	a.resetForProject()
-	a.sideSelKey = "p:" + p.Path
+	a.SetProjects(paths, root)
+	a.sideSelKey = "p:" + root
 	a.rebuildSidebar()
 	a.cfg.Projects = a.ProjectPaths()
 	a.cfg.LastProject = p.Path
 	a.saveConfig()
-	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd())
+	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.loadProjectBranchesCmd())
 }
 
 // resetForProject 清理切换仓库后不应保留的状态。
@@ -573,6 +620,34 @@ func (a *App) pickProjectDirCmd() tea.Cmd {
 	return func() tea.Msg {
 		path, err := pick()
 		return dirPickedMsg{path: path, err: err}
+	}
+}
+
+// projectBranchesMsg 是各项目当前分支的加载结果。
+type projectBranchesMsg struct {
+	branches map[string]string
+}
+
+// loadProjectBranchesCmd 异步读取所有项目的当前分支。
+func (a *App) loadProjectBranchesCmd() tea.Cmd {
+	if len(a.projects) <= 1 {
+		return nil
+	}
+	open := a.openRepo
+	projects := append([]projectEntry(nil), a.projects...)
+	return func() tea.Msg {
+		out := map[string]string{}
+		for _, p := range projects {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			svc, err := open(p.Path)
+			if err == nil {
+				if b := svc.CurrentBranch(ctx); b != "" {
+					out[p.Path] = b
+				}
+			}
+			cancel()
+		}
+		return projectBranchesMsg{branches: out}
 	}
 }
 
@@ -644,10 +719,11 @@ func (a *App) chooseProjectDir(dir string) tea.Cmd {
 	a.projects = append(a.projects, projectEntry{Name: filepath.Base(p), Path: p})
 	a.cfg.Projects = a.ProjectPaths()
 	a.saveConfig()
+	a.saveWorkspace()
 	a.rebuildSidebar()
 	a.modal = nil
 	a.setToast(i18n.S("已添加项目 "+p, "project added: "+p), false)
-	return nil
+	return a.loadProjectBranchesCmd()
 }
 
 // removeProject 从列表移除项目（当前项目不可移除）。
@@ -665,6 +741,7 @@ func (a *App) removeProject(p projectEntry) tea.Cmd {
 	a.projects = out
 	a.cfg.Projects = a.ProjectPaths()
 	a.saveConfig()
+	a.saveWorkspace()
 	a.rebuildSidebar()
 	a.setToast(i18n.S("已移除项目 "+p.Name, "project removed: "+p.Name), false)
 	return nil

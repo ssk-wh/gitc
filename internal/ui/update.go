@@ -75,6 +75,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.status = m.status
+		if a.currentPath != "" {
+			a.projectBranch[a.currentPath] = m.status.Branch
+		}
 		a.refs = m.refs
 		a.state = m.state
 		a.stashes = m.stashes
@@ -204,7 +207,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.err != nil:
 			a.setToast(i18n.S("选择目录失败: ", "pick directory failed: ")+firstLine(m.err.Error()), true)
 		case m.path != "":
-			a.chooseProjectDir(m.path)
+			return a, a.chooseProjectDir(m.path)
+		}
+		return a, nil
+
+	case projectBranchesMsg:
+		for p, b := range m.branches {
+			a.projectBranch[p] = b
+		}
+		if a.currentPath != "" && a.status.Branch != "" {
+			a.projectBranch[a.currentPath] = a.status.Branch
 		}
 		return a, nil
 
@@ -1882,7 +1894,7 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if row < 0 {
 			switch pane {
 			case PaneProjects:
-				a.openProjectMenu()
+				a.openProjectMenu(-1)
 			case PaneBranches:
 				a.openBranchesHeaderMenu()
 			case PaneChanges:
@@ -2107,7 +2119,7 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 		a.projectSel = idx
 		a.ensureProjectVisible()
 		if right {
-			a.openProjectMenu()
+			a.openProjectMenu(idx)
 			return nil, true
 		}
 		return a.switchProject(idx), true
