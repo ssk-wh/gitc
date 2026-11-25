@@ -545,6 +545,8 @@ func (a *App) busyToast() tea.Cmd {
 // currentViewHeight 返回当前面板可视行数。
 func (a *App) currentViewHeight() int {
 	switch a.pane {
+	case PaneProjects:
+		return a.projectViewHeight()
 	case PaneBranches:
 		return a.branchViewHeight()
 	case PaneChanges:
@@ -560,6 +562,10 @@ func (a *App) currentViewHeight() int {
 // move 按面板移动选择并触发对应的异步加载。
 func (a *App) move(delta int) tea.Cmd {
 	switch a.pane {
+	case PaneProjects:
+		a.projectSel += delta
+		a.ensureProjectVisible()
+		return nil
 	case PaneBranches:
 		a.moveSidebar(delta)
 		return a.selectBranchTip()
@@ -1727,13 +1733,6 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		a.clampOverlayScroll()
 		return a, nil
 	}
-	if m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonRight &&
-		!a.searchActive && a.projectNameW > 0 && m.Y == a.height-1 &&
-		m.X >= a.projectNameX && m.X < a.projectNameX+a.projectNameW {
-		a.modalAnchorX, a.modalAnchorY = m.X, m.Y
-		a.openProjectMenu()
-		return a, nil
-	}
 	if m.Action == tea.MouseActionMotion {
 		hint := updateHintText(a.latestVersion)
 		inside := a.updateAvailable && !a.searchActive && a.updateBadgeW > 0 &&
@@ -1761,7 +1760,7 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.X == l.leftW:
 				a.hoverDiv = 1
-			case m.X < l.leftW && ly == l.leftTopH:
+			case m.X < l.leftW && ly == l.projH+1+l.leftTopH:
 				a.hoverDiv = 4
 			case m.X > l.leftW && ly == l.rightTopH:
 				a.hoverDiv = 2
@@ -1801,7 +1800,7 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 				if detect(1, "div:left", func() { a.leftW = 0 }) {
 					return a, nil
 				}
-			case m.X < l.leftW && ly == l.leftTopH:
+			case m.X < l.leftW && ly == l.projH+1+l.leftTopH:
 				if detect(4, "div:lefttop", func() { a.leftTopH = 0 }) {
 					return a, nil
 				}
@@ -1859,6 +1858,8 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		if row < 0 {
 			switch pane {
+			case PaneProjects:
+				a.openProjectMenu()
 			case PaneBranches:
 				a.openBranchesHeaderMenu()
 			case PaneChanges:
@@ -2024,7 +2025,7 @@ func (a *App) anchorMenu() {
 	case PaneBranches:
 		a.modalAnchorX, a.modalAnchorY = 2, 2
 	case PaneChanges:
-		a.modalAnchorX, a.modalAnchorY = 2, l.leftTopH+2
+		a.modalAnchorX, a.modalAnchorY = 2, l.projH+1+l.leftTopH+2
 	case PaneCommits:
 		a.modalAnchorX, a.modalAnchorY = l.leftW+3, 2
 	case PaneFiles:
@@ -2071,6 +2072,22 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 			return a.sidebarEnter(&a.sideItems[a.sideSel]), true
 		}
 		return cmd, true
+	case PaneProjects:
+		if row < 0 {
+			return nil, true
+		}
+		idx := a.projectOff + row
+		if idx < 0 || idx >= len(a.projects) {
+			return nil, true
+		}
+		a.pane = PaneProjects
+		a.projectSel = idx
+		a.ensureProjectVisible()
+		if right {
+			a.openProjectMenu()
+			return nil, true
+		}
+		return a.switchProject(idx), true
 	case PaneCommits:
 		if row < 0 {
 			// 只有左键点击标题栏才打开分支筛选；点边框/右键不弹菜单
@@ -2221,6 +2238,9 @@ func (a *App) scrollPane(pane Pane, delta int) tea.Cmd {
 		return v
 	}
 	switch pane {
+	case PaneProjects:
+		a.projectOff = clamp(a.projectOff+delta, len(a.projects)-a.projectViewHeight())
+		return nil
 	case PaneBranches:
 		h := a.branchViewHeight()
 		max := len(a.sidebarLines()) - h
@@ -2283,7 +2303,7 @@ func (a *App) dragTo(x, y int) {
 	case 1:
 		a.leftW = clamp(x, 22, a.width-40)
 	case 4:
-		a.leftTopH = clamp(y, 4, l.bodyH-6)
+		a.leftTopH = clamp(y-(l.projH+1), 4, l.bodyH-l.projH-7)
 	case 2:
 		a.rightTopH = clamp(y, 4, l.bodyH-8)
 	case 5:

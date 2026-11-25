@@ -16,6 +16,8 @@ import (
 // openContextMenu 为当前面板的选中项弹出上下文菜单（键盘 b / 鼠标右键）。
 func (a *App) openContextMenu() tea.Cmd {
 	switch a.pane {
+	case PaneProjects:
+		a.openProjectMenu()
 	case PaneBranches:
 		it := a.selectedSideItem()
 		if it == nil {
@@ -692,6 +694,12 @@ func (a *App) openProjectMenu() {
 		p := p
 		choices = append(choices, choice{label: i18n.S("切换到 "+p.Name, "switch to "+p.Name), action: func(a *App) tea.Cmd {
 			return a.switchProject(a.projectIndex(p.Path))
+		}})
+	}
+	if a.projectSel >= 0 && a.projectSel < len(a.projects) && a.projects[a.projectSel].Path != a.currentPath {
+		p := a.projects[a.projectSel]
+		choices = append(choices, choice{label: i18n.S("移除项目 "+p.Name, "remove project "+p.Name), action: func(a *App) tea.Cmd {
+			return a.removeProject(p)
 		}})
 	}
 	a.choose(i18n.S("项目 "+a.svc.Name(), "projects"), choices)
