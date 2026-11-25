@@ -218,6 +218,7 @@ func (a *App) refreshCmd(quick bool) tea.Cmd {
 
 // reloadLogCmd 重新流式加载提交历史。
 func (a *App) reloadLogCmd() tea.Cmd {
+	a.clearCommitSelection()
 	a.logGen++
 	gen := a.logGen
 	a.rememberSelection()
@@ -332,6 +333,117 @@ func copyText(text string) tea.Cmd {
 func (a *App) copyToClipboard(text string) tea.Cmd {
 	a.setToast(i18n.S("已复制: ", "copied: ")+copyLabel(text), false)
 	return copyText(text)
+}
+
+// commitMessageMsg 是读取到的完整提交信息。
+type commitMessageMsg struct {
+	sha     string
+	message string
+	err     error
+}
+
+// loadCommitMessageCmd 读取提交原始信息，随后打开编辑框。
+func (a *App) loadCommitMessageCmd(sha string) tea.Cmd {
+	svc := a.svc
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+		defer cancel()
+		msg, err := svc.CommitMessage(ctx, sha)
+		return commitMessageMsg{sha: sha, message: msg, err: err}
+	}
+}
+
+// editCommitMessagePrompt 打开提交信息编辑框并确认改写历史。
+func (a *App) editCommitMessagePrompt(sha, msg string) {
+	a.promptText(i18n.S("编辑提交信息 "+shortSHA(sha)+"（改写历史）", "edit commit message "+shortSHA(sha)), "", msg, func(a *App, v string) tea.Cmd {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			a.setToast(i18n.S("提交信息不能为空", "commit message required"), true)
+			return nil
+		}
+		a.confirm(i18n.S("改写提交信息", "rewrite commit message"),
+			i18n.S("会重写该提交及其后续提交；已推送时需强推。", "Rewrites this commit and descendants; a pushed branch needs force-push."),
+			"git rebase --onto <new> "+shortSHA(sha), true, func(a *App) tea.Cmd {
+				return a.runOp("edit message "+shortSHA(sha), func(ctx context.Context) (string, error) {
+					return a.svc.EditCommitMessage(ctx, sha, v)
+				})
+			})
+		return nil
+	})
+}
+
+// squashPlan 校验多选区间并返回合并所需的提交与父提交。
+func (a *App) squashPlan() (hashes []string, head, parent, msg string, err error) {
+	if a.filter != "" || a.searchResults != nil {
+		return nil, "", "", "", fmt.Errorf("%s", i18n.S("搜索/过滤状态下不能合并提交", "cannot squash while filtering"))
+	}
+	if a.status.Detached {
+		return nil, "", "", "", fmt.Errorf("%s", i18n.S("分离 HEAD 状态下不能合并提交", "cannot squash on detached HEAD"))
+	}
+	if len(a.status.Staged) > 0 {
+		return nil, "", "", "", fmt.Errorf("%s", i18n.S("存在已暂存改动，请先提交或取消暂存", "unstage changes before squashing"))
+	}
+	lo, hi, ok := a.commitSelectionRows()
+	if !ok {
+		return nil, "", "", "", fmt.Errorf("%s", i18n.S("请先用 Ctrl 选择至少两个连续提交", "select at least two consecutive commits first"))
+	}
+	if lo != a.dirtyOffset() {
+		return nil, "", "", "", fmt.Errorf("%s", i18n.S("只能合并从最新提交（HEAD）开始的一段", "squash must start from HEAD"))
+	}
+	commits := a.visibleCommits()
+	i0, i1 := lo-a.dirtyOffset(), hi-a.dirtyOffset()
+	if i0 < 0 || i1 >= len(commits) {
+		return nil, "", "", "", fmt.Errorf("%s", i18n.S("所选提交已失效，请重新选择", "selection is stale"))
+	}
+	selected := commits[i0 : i1+1]
+	head = selected[0].Hash
+	if a.status.OID != "" && head != a.status.OID {
+		return nil, "", "", "", fmt.Errorf("%s", i18n.S("只能合并当前 HEAD 开始的提交", "squash must start from HEAD"))
+	}
+	for k := 0; k < len(selected)-1; k++ {
+		if len(selected[k].Parents) != 1 || selected[k].Parents[0] != selected[k+1].Hash {
+			return nil, "", "", "", fmt.Errorf("%s", i18n.S("所选提交不是一条线性历史（含合并提交）", "selection is not a linear chain"))
+		}
+	}
+	oldest := selected[len(selected)-1]
+	if len(oldest.Parents) == 0 {
+		return nil, "", "", "", fmt.Errorf("%s", i18n.S("不能合并到根提交", "cannot squash the root commit"))
+	}
+	parent = oldest.Parents[0]
+	for _, c := range selected {
+		hashes = append(hashes, c.Hash)
+	}
+	var lines []string
+	for i := len(selected) - 1; i >= 0; i-- {
+		lines = append(lines, selected[i].Subject)
+	}
+	msg = strings.Join(lines, string(rune(10)))
+	return hashes, head, parent, msg, nil
+}
+
+// squashPrompt 合并多选提交：先编辑提交信息，再确认改写历史。
+func (a *App) squashPrompt() {
+	hashes, head, parent, msg, err := a.squashPlan()
+	if err != nil {
+		a.setToast(err.Error(), true)
+		return
+	}
+	n := len(hashes)
+	a.promptText(fmt.Sprintf(i18n.S("合并 %d 个提交（改写历史，可编辑提交信息）", "squash %d commits"), n), "", msg, func(a *App, v string) tea.Cmd {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			a.setToast(i18n.S("提交信息不能为空", "commit message required"), true)
+			return nil
+		}
+		a.confirm(fmt.Sprintf(i18n.S("确认合并 %d 个提交", "confirm squash of %d commits"), n),
+			fmt.Sprintf(i18n.S("将 %s 到 %s 合并为一个提交；已推送时需强推。", "Squash %s..%s; a pushed branch needs force-push."), shortSHA(hashes[n-1]), shortSHA(head)),
+			"git reset --soft "+shortSHA(parent)+" && git commit", true, func(a *App) tea.Cmd {
+				return a.runOp(fmt.Sprintf("squash %d commits", n), func(ctx context.Context) (string, error) {
+					return a.svc.Squash(ctx, head, parent, v)
+				})
+			})
+		return nil
+	})
 }
 
 // —— 弹窗辅助 ——

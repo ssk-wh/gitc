@@ -245,6 +245,7 @@ type App struct {
 	changesExpanded map[string]bool
 	changeSel       int
 	changeOff       int
+	commitAnchor    int // Ctrl 多选锚点（-1 表示未多选）
 	drawerLeftW     int // 抽屉文件列宽度（0 表示默认比例）
 	rightTopH       int // 提交区高度（0 表示默认比例）
 	dragMode        int // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线
@@ -273,6 +274,7 @@ func New(svc git.Service) *App {
 		expanded:        map[string]bool{},
 		commitColor:     map[string]int{},
 		branchColor:     map[string]int{},
+		commitAnchor:    -1,
 		changesExpanded: map[string]bool{},
 	}
 	a.layout = a.builder.Layout()
@@ -329,6 +331,39 @@ func (a *App) dirtyOffset() int {
 		return 1
 	}
 	return 0
+}
+
+// clearCommitSelection 清除 Ctrl 多选区间。
+func (a *App) clearCommitSelection() { a.commitAnchor = -1 }
+
+// commitSelectionRows 返回多选区间 [lo,hi]（至少两行才有效）。
+func (a *App) commitSelectionRows() (lo, hi int, ok bool) {
+	if a.commitAnchor < 0 {
+		return 0, 0, false
+	}
+	lo, hi = a.commitAnchor, a.graphSel
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	if lo < a.dirtyOffset() || hi >= a.totalRows() || hi <= lo {
+		return 0, 0, false
+	}
+	return lo, hi, true
+}
+
+// commitSelectionCount 返回多选提交数（未多选返回 0）。
+func (a *App) commitSelectionCount() int {
+	lo, hi, ok := a.commitSelectionRows()
+	if !ok {
+		return 0
+	}
+	return hi - lo + 1
+}
+
+// rowInCommitSelection 判断提交行是否在多选区间内。
+func (a *App) rowInCommitSelection(row int) bool {
+	lo, hi, ok := a.commitSelectionRows()
+	return ok && row >= lo && row <= hi
 }
 
 func (a *App) totalRows() int { return len(a.visibleCommits()) + a.dirtyOffset() }

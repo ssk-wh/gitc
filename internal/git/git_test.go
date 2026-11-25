@@ -481,3 +481,58 @@ func TestStreamLogScope(t *testing.T) {
 		t.Errorf("all 范围 = %v", all)
 	}
 }
+
+func TestSquashCommits(t *testing.T) {
+	_, dir := newTestRepo(t)
+	r := mustRepo(t, dir)
+	h1 := commitFile(t, dir, "a.txt", "1", "first")
+	h2 := commitFile(t, dir, "a.txt", "2", "second")
+	h3 := commitFile(t, dir, "a.txt", "3", "third")
+	ctx := context.Background()
+	if _, err := r.Squash(ctx, h3, h1, "squashed two"); err != nil {
+		t.Fatalf("Squash: %v", err)
+	}
+	head := strings.TrimSpace(runGit(t, dir, "rev-parse", "HEAD"))
+	if n := strings.TrimSpace(runGit(t, dir, "rev-list", "--count", h1+"..HEAD")); n != "1" {
+		t.Fatalf("合并后提交数 = %s，期望 1", n)
+	}
+	msg, err := r.CommitMessage(ctx, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg != "squashed two" {
+		t.Fatalf("合并信息 = %q", msg)
+	}
+	if diff := runGit(t, dir, "diff", "--stat", h3, head); strings.TrimSpace(diff) != "" {
+		t.Fatalf("合并后内容不一致:\n%s", diff)
+	}
+	_ = h2
+}
+
+func TestEditCommitMessage(t *testing.T) {
+	_, dir := newTestRepo(t)
+	r := mustRepo(t, dir)
+	commitFile(t, dir, "a.txt", "1", "first")
+	h2 := commitFile(t, dir, "a.txt", "2", "second")
+	commitFile(t, dir, "a.txt", "3", "third")
+	authorBefore := strings.TrimSpace(runGit(t, dir, "log", "-1", "--format=%an <%ae>", h2))
+	ctx := context.Background()
+	if _, err := r.EditCommitMessage(ctx, h2, "second edited"); err != nil {
+		t.Fatalf("EditCommitMessage: %v", err)
+	}
+	head := strings.TrimSpace(runGit(t, dir, "rev-parse", "HEAD"))
+	msg, err := r.CommitMessage(ctx, head+"^")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg != "second edited" {
+		t.Fatalf("编辑后信息 = %q", msg)
+	}
+	if got := strings.TrimSpace(runGit(t, dir, "log", "-1", "--format=%an <%ae>", head+"^")); got != authorBefore {
+		t.Fatalf("作者被改变: %q -> %q", authorBefore, got)
+	}
+	// 后续提交仍保留在 HEAD
+	if got := strings.TrimSpace(runGit(t, dir, "log", "-1", "--format=%s")); got != "third" {
+		t.Fatalf("HEAD 信息 = %q", got)
+	}
+}

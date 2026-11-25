@@ -216,9 +216,21 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 
 // commitMenuChoices 是提交上下文菜单。
 func (a *App) commitMenuChoices(c *git.Commit) []choice {
-	out := []choice{
+	var out []choice
+	if a.filter == "" && a.searchResults == nil {
+		if n := a.commitSelectionCount(); n >= 2 {
+			out = append(out, choice{label: fmt.Sprintf(i18n.S("合并 %d 个提交", "squash %d commits"), n), action: func(a *App) tea.Cmd {
+				a.squashPrompt()
+				return nil
+			}})
+		}
+	}
+	out = append(out, []choice{
 		{label: i18n.S("查看提交详情", "view details"), action: func(a *App) tea.Cmd {
 			return a.openCommitDetail(c.Hash)
+		}},
+		{label: i18n.S("编辑提交信息（改写历史）", "edit commit message"), action: func(a *App) tea.Cmd {
+			return a.loadCommitMessageCmd(c.Hash)
 		}},
 		{label: i18n.S("检出此提交（分离 HEAD）", "checkout detached"), action: func(a *App) tea.Cmd {
 			a.confirm(i18n.S("检出 "+c.Short, "checkout "+c.Short),
@@ -260,7 +272,7 @@ func (a *App) commitMenuChoices(c *git.Commit) []choice {
 		{label: i18n.S("复制提交信息", "copy message"), action: func(a *App) tea.Cmd {
 			return a.copyToClipboard(c.Subject)
 		}},
-	}
+	}...)
 	return out
 }
 

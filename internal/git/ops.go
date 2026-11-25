@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -212,6 +213,133 @@ func (r *Repo) Commit(ctx context.Context, message string, amend bool) (string, 
 	}
 	args = append(args, "-F", "-")
 	return r.runInput(ctx, message, args...)
+}
+
+// CommitMessage 读取提交的完整原始信息（%B）。
+func (r *Repo) CommitMessage(ctx context.Context, sha string) (string, error) {
+	out, err := r.run(ctx, true, "log", "-1", "--format=%B", sha)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(out, string(rune(10))), nil
+}
+
+// EditCommitMessage 改写某个本地提交的信息，并把其后的提交 rebase 到新提交上。
+func (r *Repo) EditCommitMessage(ctx context.Context, sha, message string) (string, error) {
+	if strings.TrimSpace(message) == "" {
+		return "", errors.New("提交信息不能为空")
+	}
+	branch := r.CurrentBranch(ctx)
+	if branch == "" {
+		return "", errors.New("分离 HEAD 状态下不能编辑提交信息")
+	}
+	if err := r.requireCleanWorktree(ctx); err != nil {
+		return "", err
+	}
+	if _, err := r.run(ctx, true, "merge-base", "--is-ancestor", sha, "HEAD"); err != nil {
+		return "", errors.New("该提交不在当前分支上")
+	}
+	parent, err := r.run(ctx, true, "rev-parse", sha+"^")
+	if err != nil {
+		return "", errors.New("不能编辑根提交")
+	}
+	if _, err := r.run(ctx, true, "rev-parse", sha+"^2"); err == nil {
+		return "", errors.New("暂不支持编辑合并提交")
+	}
+	tree, err := r.run(ctx, true, "rev-parse", sha+"^{tree}")
+	if err != nil {
+		return "", err
+	}
+	oldHead, err := r.run(ctx, true, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	// 保留原提交作者信息
+	author, _ := r.run(ctx, true, "log", "-1", "--format=%an%x00%ae%x00%ad", "--date=raw", sha)
+	parts := strings.Split(strings.TrimRight(author, string(rune(10))), string(rune(0)))
+	var authorEnv []string
+	if len(parts) == 3 {
+		authorEnv = []string{
+			"GIT_AUTHOR_NAME=" + parts[0],
+			"GIT_AUTHOR_EMAIL=" + parts[1],
+			"GIT_AUTHOR_DATE=" + parts[2],
+		}
+	}
+	newSha, err := r.runInputEnv(ctx, message+string(rune(10)), authorEnv, "commit-tree", strings.TrimSpace(tree), "-p", strings.TrimSpace(parent))
+	if err != nil {
+		return "", err
+	}
+	newSha = strings.TrimSpace(newSha)
+	if _, err := r.run(ctx, false, "rebase", "--onto", newSha, sha, branch); err != nil {
+		_, _ = r.run(context.Background(), false, "rebase", "--abort")
+		_, _ = r.run(context.Background(), false, "reset", "--soft", strings.TrimSpace(oldHead))
+		return "", err
+	}
+	short := func(v string) string {
+		if len(v) > 7 {
+			return v[:7]
+		}
+		return v
+	}
+	return "已更新提交信息: " + short(sha) + " -> " + short(newSha), nil
+}
+
+// Squash 把 head 到 parent（不含）之间的一段提交合并为一个；head 必须是当前 HEAD。
+func (r *Repo) Squash(ctx context.Context, head, parent, message string) (string, error) {
+	if strings.TrimSpace(message) == "" {
+		return "", errors.New("提交信息不能为空")
+	}
+	cur, err := r.run(ctx, true, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(cur) != head {
+		return "", errors.New("HEAD 已变化，请刷新后重试")
+	}
+	if out, err := r.run(ctx, true, "diff", "--cached", "--name-only"); err != nil {
+		return "", err
+	} else if strings.TrimSpace(out) != "" {
+		return "", errors.New("存在已暂存改动，请先提交或取消暂存")
+	}
+	if _, err := r.run(ctx, true, "merge-base", "--is-ancestor", parent, head); err != nil {
+		return "", errors.New("父提交不是 HEAD 的祖先")
+	}
+	if _, err := r.run(ctx, false, "reset", "--soft", parent); err != nil {
+		return "", err
+	}
+	out, err := r.runInput(ctx, message+string(rune(10)), "commit", "-F", "-")
+	if err != nil {
+		_, _ = r.run(context.Background(), false, "reset", "--soft", head)
+		return out, err
+	}
+	return out, nil
+}
+
+// runInputEnv 执行命令并附加环境变量（用于保留作者信息）。
+func (r *Repo) runInputEnv(ctx context.Context, input string, extraEnv []string, args ...string) (string, error) {
+	c := r.cmd(ctx, false, args...)
+	c.Env = append(append([]string{}, c.Env...), extraEnv...)
+	c.Stdin = strings.NewReader(input)
+	var outBuf, errBuf bytes.Buffer
+	c.Stdout = &outBuf
+	c.Stderr = &errBuf
+	if err := c.Run(); err != nil {
+		return outBuf.String(), &GitError{Args: args, Output: errBuf.String() + outBuf.String(), Err: err}
+	}
+	return outBuf.String(), nil
+}
+
+func (r *Repo) requireCleanWorktree(ctx context.Context) error {
+	for _, args := range [][]string{{"diff", "--name-only"}, {"diff", "--cached", "--name-only"}} {
+		out, err := r.run(ctx, true, args...)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(out) != "" {
+			return errors.New("工作区或暂存区有改动，请先提交或暂存后再改写历史")
+		}
+	}
+	return nil
 }
 
 // Stash 保存工作区改动；includeUntracked 对应 -u。

@@ -161,6 +161,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(a.refreshCmd(false), a.reloadLogCmd())
 
+	case commitMessageMsg:
+		if m.err != nil {
+			a.setToast(firstLine(m.err.Error()), true)
+			return a, nil
+		}
+		a.clearCommitSelection()
+		a.editCommitMessagePrompt(m.sha, m.message)
+		return a, nil
+
 	case detailMsg:
 		if a.overlay != overlayDetail {
 			return a, nil
@@ -310,6 +319,7 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.setToast(i18n.S("已取消", "cancelled"), false)
 			return a, nil
 		}
+		a.clearCommitSelection()
 		a.filter = ""
 		a.searchResults = nil
 		a.searchQuery = ""
@@ -523,6 +533,7 @@ func (a *App) move(delta int) tea.Cmd {
 		a.clampInfoOffset()
 		return nil
 	case PaneCommits:
+		a.clearCommitSelection()
 		a.graphSel += delta
 		a.clampSelection()
 		if c := a.selectedCommit(); c != nil {
@@ -530,6 +541,7 @@ func (a *App) move(delta int) tea.Cmd {
 		}
 		return a.loadFilesForSelection()
 	default:
+		a.clearCommitSelection()
 		a.graphSel += delta
 		a.clampSelection()
 		if c := a.selectedCommit(); c != nil {
@@ -1513,6 +1525,7 @@ func (a *App) openStateMenu() {
 
 // openSearchInline 进入行内搜索（`/`），结果实时展示在主列表。
 func (a *App) openSearchInline() {
+	a.clearCommitSelection()
 	a.searchActive = true
 	a.searchResults = nil
 	a.searchQuery = ""
@@ -1530,6 +1543,7 @@ func (a *App) handleSearchKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.filter = ""
 		a.searchResults = nil
 		a.searchQuery = ""
+		a.clearCommitSelection()
 		a.invalidateView()
 		a.graphSel, a.graphOff = 0, 0
 		return a, nil
@@ -1949,7 +1963,26 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 		if idx < 0 || idx >= a.totalRows() {
 			return nil, true
 		}
-		a.graphSel = idx
+		switch {
+		case idx < a.dirtyOffset():
+			// 未提交行不参与多选
+			a.clearCommitSelection()
+			a.graphSel = idx
+		case m.Ctrl && !right:
+			if a.commitAnchor < 0 {
+				anchor := a.graphSel
+				if anchor < a.dirtyOffset() || anchor >= a.totalRows() || anchor == idx {
+					anchor = idx
+				}
+				a.commitAnchor = anchor
+			}
+			a.graphSel = idx
+		case right && a.commitAnchor >= 0 && a.rowInCommitSelection(idx):
+			// 右键点在已选区间内：保留区间，不改变活动行
+		default:
+			a.clearCommitSelection()
+			a.graphSel = idx
+		}
 		a.clampSelection()
 		cmd := a.loadFilesForSelection()
 		key := "row:" + i18n.S("dirty", "dirty")
@@ -1957,7 +1990,7 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 			a.selHash = c.Hash
 			key = "commit:" + c.Hash
 		}
-		if !right && a.isDoubleClick(key) {
+		if !right && !m.Ctrl && a.isDoubleClick(key) {
 			if a.onDirtyRow() {
 				a.pane = PaneFiles
 				a.ensureFileVisible()
