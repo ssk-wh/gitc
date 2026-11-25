@@ -71,7 +71,7 @@ if [ -z "$tag" ]; then
 fi
 
 if [ -z "$tag" ]; then
-  die "无法获取最新 release 版本号；可设置 GITC_VERSION=v0.1.3 指定版本后重试"
+  die "无法获取最新 release 版本号；可设置 GITC_VERSION 为某个 release tag 后重试"
 fi
 if [ -n "$tag" ]; then
   name="gitc-${os}-${arch}"
