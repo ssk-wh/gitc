@@ -161,6 +161,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(a.refreshCmd(false), a.reloadLogCmd())
 
+	case remoteTagMsg:
+		it := a.selectedSideItem()
+		if it == nil || it.kind != sideTag || it.ref.Name != m.name || a.pane != PaneBranches {
+			return a, nil
+		}
+		pushed := m.exists && m.err == nil
+		if m.err != nil {
+			a.setToast(i18n.S("检查远端失败，仍可尝试推送: ", "remote check failed, push is still available: ")+firstLine(m.err.Error()), true)
+		}
+		a.choose(a.branchMenuTitle(it), a.tagMenuChoices(it.ref, pushed))
+		return a, nil
+
 	case updateCheckMsg:
 		if m.err == nil && m.newer && m.tag != "" {
 			a.latestVersion = m.tag
