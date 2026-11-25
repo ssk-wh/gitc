@@ -684,6 +684,7 @@ func (a *App) discardAllPrompt() {
 // openProjectMenu 是左上角项目区标题右键菜单。
 func (a *App) openProjectMenu() {
 	choices := []choice{{label: i18n.S("添加项目…", "add project..."), action: func(a *App) tea.Cmd {
+		a.setToast(i18n.S("请在弹出的系统对话框中选择项目目录…", "choose a project directory in the system dialog..."), false)
 		return a.pickProjectDirCmd()
 	}}}
 	for _, p := range a.projects {

@@ -1350,7 +1350,7 @@ func helpLines() []string {
 	rows := [][2]string{
 		{"↑↓", i18n.S("当前区选择/滚动；内容区方向键上下翻页", "select/scroll in current pane")},
 		{"PgUp / PgDn", i18n.S("翻页（内容区整页滚动）", "page up/down (full page in content)")},
-		{"Tab / ←→", i18n.S("按顺序切换 6 个区域", "cycle 6 panes")},
+		{"Tab / ←→", i18n.S("按顺序切换 7 个区域", "cycle 7 panes")},
 		{"Alt+方向键", i18n.S("按空间位置切换区域（左3/右4）", "spatial focus across panes")},
 		{"space / d / D", i18n.S("工作区文件区：暂存 / 丢弃所选 / 全部丢弃", "worktree files: stage / discard selected / discard all")},
 		{"v / 点击 COMMITS 标题", i18n.S("选择要显示的分支（提交视图筛选）", "filter commits by branch")},
