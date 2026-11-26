@@ -3195,7 +3195,7 @@ func TestHelpTwoColumnLayout(t *testing.T) {
 	a.overlay = overlayHelp
 	a.detail.offset = 0
 	v := plainView(a)
-	for _, want := range []string{"████ █ ███ ████", "终端里的 Git 工作台", "github.com/ssk-wh/gitc", "快捷键", "↑/↓ 滚动快捷键"} {
+	for _, want := range []string{"████ ████ ████ ████", "终端里的 Git 工作台", "github.com/ssk-wh/gitc", "快捷键", "↑/↓ 滚动快捷键"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("帮助页缺少 %q:\n%s", want, v)
 		}
@@ -3203,7 +3203,7 @@ func TestHelpTwoColumnLayout(t *testing.T) {
 	// 品牌图标和快捷键标题应在同一行，说明是左右分栏而非上下堆叠。
 	found := false
 	for _, line := range strings.Split(v, string(rune(10))) {
-		if strings.Contains(line, "████ █ ███ ████") && strings.Contains(line, "快捷键") {
+		if strings.Contains(line, "████ ████ ████ ████") && strings.Contains(line, "快捷键") {
 			found = true
 			break
 		}
