@@ -338,6 +338,11 @@ func (r *Repo) RemoveWorktree(ctx context.Context, path string, force bool) (str
 	return r.run(ctx, false, args...)
 }
 
+// PruneWorktrees 清理已失效的 worktree 记录（不会删除目录内容）。
+func (r *Repo) PruneWorktrees(ctx context.Context) (string, error) {
+	return r.run(ctx, false, "worktree", "prune")
+}
+
 // CommitMessage 读取提交的完整原始信息（%B）。
 func (r *Repo) CommitMessage(ctx context.Context, sha string) (string, error) {
 	out, err := r.run(ctx, true, "log", "-1", "--format=%B", sha)

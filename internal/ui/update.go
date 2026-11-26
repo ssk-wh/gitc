@@ -2160,6 +2160,10 @@ func (a *App) activateProjectRow() tea.Cmd {
 	}
 	r := rows[a.projectSel]
 	if r.worktree != nil {
+		if worktreeInvalid(*r.worktree) {
+			a.setToast(i18n.S("worktree 已失效：目录或 git 元数据不存在，可右键清理记录", "worktree is invalid: directory or git metadata is missing; right-click to prune"), true)
+			return nil
+		}
 		return a.switchToWorktree(r.project.Path, r.worktree.Path)
 	}
 	if len(a.worktrees[r.project.Path]) > 1 {

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -442,6 +443,17 @@ func worktreeBranch(wt git.Worktree) string {
 	return "…"
 }
 
+// worktreeInvalid 判断 worktree 是否已经失效（记录存在但目录/元数据丢失）。
+func worktreeInvalid(wt git.Worktree) bool {
+	if wt.Prunable {
+		return true
+	}
+	if _, err := os.Stat(wt.Path); err != nil {
+		return true
+	}
+	return false
+}
+
 // worktreeLabel 返回 worktree 在树中的名称。
 func worktreeLabel(wt git.Worktree) string {
 	if wt.Main {
@@ -500,6 +512,9 @@ func (a *App) viewProjectsPanel(width, height int) string {
 			label = arrow + r.project.Name
 		} else {
 			label = "  " + worktreeLabel(*r.worktree)
+			if worktreeInvalid(*r.worktree) {
+				label += i18n.S("（失效）", " (invalid)")
+			}
 		}
 		branch := ""
 		if r.worktree != nil {
