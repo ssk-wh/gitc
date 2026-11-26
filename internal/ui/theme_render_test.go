@@ -73,15 +73,15 @@ func TestChoiceMenuBorderUsesActiveColor(t *testing.T) {
 	}
 }
 
-// TestHelpLogoCUsesActiveBorderColor 字标末尾 C 使用当前主题的激活边框色。
-func TestHelpLogoCUsesActiveBorderColor(t *testing.T) {
+// TestHelpLogoCUsesSelectionColor 字标末尾 C 使用提交选中色。
+func TestHelpLogoCUsesSelectionColor(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
-	prefix := strings.SplitN(activeBorderStyle().Render("█"), "█", 2)[0]
+	prefix := strings.SplitN(styleSel.Render("█"), "█", 2)[0]
 	for _, line := range helpBrandLines()[:5] {
 		if strings.Contains(line, prefix) {
 			return
 		}
 	}
-	t.Fatalf("字标 C 未使用激活边框色")
+	t.Fatalf("字标 C 未使用选中色")
 }
