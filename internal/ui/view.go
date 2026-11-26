@@ -1593,9 +1593,9 @@ func clampHelpOffset(off, total, viewH int) int {
 // helpLogo 是加粗块状像素风的 gitc 字标；前三字母用弱色，c 用主文字色。
 var helpLogo = [][4]string{
 	{"██████", "██", "██████", "██████"},
+	{"██    ", "██", "  ██  ", "██    "},
+	{"██ ███", "██", "  ██  ", "██    "},
 	{"██  ██", "██", "  ██  ", "██    "},
-	{"██████", "██", "  ██  ", "██    "},
-	{"    ██", "██", "  ██  ", "██    "},
 	{"██████", "██", "  ██  ", "██████"},
 }
 
@@ -1604,7 +1604,7 @@ func helpBrandLines() []string {
 	lines := []string{}
 	for _, row := range helpLogo {
 		line := "  " + styleDim.Render(row[0]) + " " + styleDim.Render(row[1]) + " " +
-			styleDim.Render(row[2]) + " " + styleTitle.Render(row[3])
+			styleDim.Render(row[2]) + " " + activeBorderStyle().Render(row[3])
 		lines = append(lines, line)
 	}
 	lines = append(lines, "",
