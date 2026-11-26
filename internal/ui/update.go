@@ -2331,7 +2331,7 @@ func (a *App) scrollPane(pane Pane, delta int) tea.Cmd {
 	}
 	switch pane {
 	case PaneProjects:
-		a.projectOff = clamp(a.projectOff+delta, len(a.projects)-a.projectViewHeight())
+		a.projectOff = clamp(a.projectOff+delta, len(a.projectRows())-a.projectViewHeight())
 		return nil
 	case PaneBranches:
 		h := a.branchViewHeight()

@@ -2756,3 +2756,30 @@ func TestNewWorktreePrompt(t *testing.T) {
 		t.Fatalf("默认值 = %q", v)
 	}
 }
+
+// TestProjectPaneWheelScroll 项目区滚轮应能滚动（含 worktree 子行）。
+func TestProjectPaneWheelScroll(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.currentPath = cleanProjectPath(root)
+	a.currentProjectPath = cleanProjectPath(root)
+	wts := []git.Worktree{{Path: cleanProjectPath(root), Branch: "main", Main: true}}
+	for i := 0; i < 12; i++ {
+		wts = append(wts, git.Worktree{Path: filepath.Join(t.TempDir(), "wt"), Branch: fmt.Sprintf("wt-%d", i)})
+	}
+	a.worktrees[cleanProjectPath(root)] = wts
+	if rows := a.projectRows(); len(rows) <= a.projectViewHeight() {
+		t.Fatalf("测试数据不足以滚动: rows=%d view=%d", len(rows), a.projectViewHeight())
+	}
+	a.pane = PaneProjects
+	a.projectOff = 0
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown, X: 2, Y: 2})
+	if a.projectOff == 0 {
+		t.Fatal("项目区滚轮未滚动")
+	}
+	max := len(a.projectRows()) - a.projectViewHeight()
+	if a.projectOff > max {
+		t.Fatalf("projectOff = %d 超过上限 %d", a.projectOff, max)
+	}
+}

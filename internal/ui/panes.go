@@ -160,6 +160,8 @@ func (a *App) drawPaneScrollbar(lines []string, b paneBox) {
 // paneScrollState 返回区域的滚动偏移、总行数与可视行数。
 func (a *App) paneScrollState(b paneBox) (off, total, visible int) {
 	switch b.pane {
+	case PaneProjects:
+		return a.projectOff, len(a.projectRows()), a.projectViewHeight()
 	case PaneBranches:
 		return a.sideOff, len(a.sidebarLines()), a.branchViewHeight()
 	case PaneCommits:
