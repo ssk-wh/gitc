@@ -20,17 +20,6 @@ jobs:
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
-      - name: Clean all releases for v1.0.0
-        if: env.RELEASE_TAG == 'v1.0.0'
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release list --limit 100 --json tagName --jq '.[].tagName' | while read -r tag; do
-            [ -n "$tag" ] || continue
-            gh release delete "$tag" --yes || true
-            echo "deleted release $tag"
-          done
-
       - name: Ensure release exists
         shell: bash
         run: |
