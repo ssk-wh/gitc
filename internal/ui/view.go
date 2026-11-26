@@ -57,9 +57,6 @@ func (a *App) statusLine(width int) string {
 	if a.status.Ahead > 0 || a.status.Behind > 0 {
 		line += styleCyan.Render(fmt.Sprintf("  ↑%d ↓%d", a.status.Ahead, a.status.Behind))
 	}
-	if n := a.status.Total(); n > 0 {
-		line += styleWarn.Render(fmt.Sprintf("  ✱%d", n))
-	}
 	return truncate(line, width)
 }
 
@@ -332,8 +329,13 @@ var buildVersion string
 // SetVersion 设置界面显示的版本号（空字符串表示不显示）。
 func SetVersion(v string) { buildVersion = v }
 
+// logoText 返回底部左侧的品牌 wordmark：强调色方块 + 加粗 gitc。
+func logoText() string {
+	return styleAccent.Render("▐") + styleTitle.Render(" gitc ") + styleAccent.Render("▌")
+}
+
 func (a *App) viewHeader() string {
-	parts := []string{styleTitle.Render("gitc")}
+	parts := []string{logoText()}
 	if v := strings.TrimSpace(buildVersion); v != "" {
 		if !strings.HasPrefix(v, "v") {
 			v = "v" + v
@@ -351,9 +353,6 @@ func (a *App) viewHeader() string {
 	}
 	if a.status.Ahead > 0 || a.status.Behind > 0 {
 		parts = append(parts, styleCyan.Render(fmt.Sprintf("↑%d ↓%d", a.status.Ahead, a.status.Behind)))
-	}
-	if n := a.status.Total(); n > 0 {
-		parts = append(parts, styleWarn.Render(fmt.Sprintf("✱%d", n)))
 	}
 	if a.state.InProgress() {
 		parts = append(parts, styleBad.Bold(true).Render(strings.ToUpper(a.state.Kind)))

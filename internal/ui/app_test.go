@@ -2442,7 +2442,7 @@ func TestProjectMenuUsesClickedProject(t *testing.T) {
 func TestFooterHintsRightAligned(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	a.toast = "已复制一段很长的提交信息用于测试底部截断"
+	a.toast = strings.Repeat("已复制一段很长的提交信息用于测试底部截断", 3)
 	v := ansi.Strip(a.viewFooter())
 	plain := strings.TrimRight(v, " ")
 	hint := strings.TrimRight(ansi.Strip(a.contextHints()), " ")
@@ -3177,5 +3177,13 @@ func TestWorktreesUnchangedSkipsUpdate(t *testing.T) {
 	_, cmd := a.Update(worktreesMsg{list: map[string][]git.Worktree{cleanProjectPath(root): list}})
 	if cmd != nil {
 		t.Fatal("worktree 无变化时不应返回命令")
+	}
+}
+
+// TestLogoBadge 底部左侧使用品牌化 wordmark。
+func TestLogoBadge(t *testing.T) {
+	a, _ := newFakeApp(t)
+	if !strings.Contains(plainView(a), "▐ gitc ▌") {
+		t.Fatalf("底部缺少品牌标识: %q", plainView(a))
 	}
 }
