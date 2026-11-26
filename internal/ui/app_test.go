@@ -3001,3 +3001,25 @@ func TestOverlayKeepsBackgroundColors(t *testing.T) {
 		}
 	}
 }
+
+// TestOverlayAlignsBorderWithWideChars 背景含中文/宽字符时浮层边框仍按列对齐。
+func TestOverlayAlignsBorderWithWideChars(t *testing.T) {
+	_, _ = newFakeApp(t)
+	base := "中文中文中文中文中文中文中文中文"
+	box := []string{"╭───╮", "│abc│", "╰───╯"}
+	out := ansi.Strip(overlayBox(base, box, 5, 0, 30))
+	lines := strings.Split(out, string(rune(10)))
+	if len(lines) < 3 {
+		t.Fatal("浮层行数不足")
+	}
+	for i, want := range []string{"╭", "│", "╰"} {
+		idx := strings.Index(lines[i], want)
+		if idx < 0 {
+			t.Fatalf("第 %d 行缺少边框: %q", i, lines[i])
+		}
+		col := strWidth(lines[i][:idx])
+		if col != 5 {
+			t.Fatalf("第 %d 行边框列 = %d，期望 5: %q", i, col, lines[i])
+		}
+	}
+}

@@ -114,7 +114,7 @@ func (a *App) baseView() string {
 }
 
 // splitStyled 把一行按显示列切成左段、右段，并记录右段起始处仍生效的 SGR。
-func splitStyled(s string, left, right int) (string, string) {
+func splitStyled(s string, left, right int) (string, string, int) {
 	var before, after strings.Builder
 	active := ""
 	col := 0
@@ -173,7 +173,7 @@ func splitStyled(s string, left, right int) (string, string) {
 		col += w
 		i += size
 	}
-	return before.String(), after.String()
+	return before.String(), after.String(), col
 }
 
 // overlayBox 把一个浮层按列叠加到 base 上，保留左右内容的颜色。
@@ -189,7 +189,12 @@ func overlayBox(base string, box []string, x, y, width int) string {
 		}
 		// 用浮层自身的显示宽度确定右侧切分点，避免边框错位。
 		boxW := strWidth(bl)
-		left, right := splitStyled(lines[yy], x, x+boxW)
+		left, right, startCol := splitStyled(lines[yy], x, x+boxW)
+		// 宽字符跨越切分列时会被整字丢弃，用空格补齐到精确列。
+		left = padRight(left, x)
+		if right != "" && startCol < x+boxW {
+			right = strings.Repeat(" ", x+boxW-startCol) + right
+		}
 		lines[yy] = padRight(truncate(left+bl+right, width), width)
 	}
 	return strings.Join(lines, string(rune(10)))
