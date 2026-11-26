@@ -57,9 +57,6 @@ func (a *App) statusLine(width int) string {
 	if a.status.Ahead > 0 || a.status.Behind > 0 {
 		line += styleCyan.Render(fmt.Sprintf("  ↑%d ↓%d", a.status.Ahead, a.status.Behind))
 	}
-	if n := a.status.Total(); n > 0 {
-		line += styleWarn.Render(fmt.Sprintf("  ✱%d", n))
-	}
 	return truncate(line, width)
 }
 
@@ -332,8 +329,13 @@ var buildVersion string
 // SetVersion 设置界面显示的版本号（空字符串表示不显示）。
 func SetVersion(v string) { buildVersion = v }
 
+// logoText 返回底部左侧的品牌 wordmark：强调色方块 + 加粗 gitc。
+func logoText() string {
+	return styleAccent.Render("▐") + styleTitle.Render(" gitc ") + styleAccent.Render("▌")
+}
+
 func (a *App) viewHeader() string {
-	parts := []string{styleTitle.Render("gitc")}
+	parts := []string{logoText()}
 	if v := strings.TrimSpace(buildVersion); v != "" {
 		if !strings.HasPrefix(v, "v") {
 			v = "v" + v
@@ -351,9 +353,6 @@ func (a *App) viewHeader() string {
 	}
 	if a.status.Ahead > 0 || a.status.Behind > 0 {
 		parts = append(parts, styleCyan.Render(fmt.Sprintf("↑%d ↓%d", a.status.Ahead, a.status.Behind)))
-	}
-	if n := a.status.Total(); n > 0 {
-		parts = append(parts, styleWarn.Render(fmt.Sprintf("✱%d", n)))
 	}
 	if a.state.InProgress() {
 		parts = append(parts, styleBad.Bold(true).Render(strings.ToUpper(a.state.Kind)))
@@ -1454,7 +1453,11 @@ func (a *App) clampOverlayScroll() {
 	case overlayLog:
 		total = len(a.logs)
 	case overlayHelp:
-		total = len(helpLines())
+		if a.width >= 96 {
+			total = len(helpKeyLines())
+		} else {
+			total = len(helpLines())
+		}
 	}
 	max := total - (a.height - 2)
 	if max < 0 {
@@ -1523,29 +1526,116 @@ func colorizeDiffLine(line string, width int) string {
 
 // viewHelp 渲染帮助覆盖层。
 func (a *App) viewHelp() string {
-	lines := helpLines()
 	viewH := a.height - 2
-	off := a.detail.offset
-	end := off + viewH
-	if end > len(lines) {
-		end = len(lines)
-	}
-	if off > len(lines) {
-		off = len(lines)
+	if viewH < 1 {
+		viewH = 1
 	}
 	var b strings.Builder
 	b.WriteString(styleTitle.Render(i18n.S("gitc 帮助", "gitc help")))
 	b.WriteByte('\n')
-	for _, ln := range lines[off:end] {
-		b.WriteString(truncate(ln, a.width))
-		b.WriteByte('\n')
+	if a.width < 96 {
+		lines := helpLines()
+		off := clampHelpOffset(a.detail.offset, len(lines), viewH)
+		end := off + viewH
+		if end > len(lines) {
+			end = len(lines)
+		}
+		for _, ln := range lines[off:end] {
+			b.WriteString(truncate(ln, a.width))
+			b.WriteByte('\n')
+		}
+	} else {
+		left := helpBrandLines()
+		right := helpKeyLines()
+		lw := helpLeftWidth(a.width)
+		rw := a.width - lw - 3
+		if rw < 20 {
+			rw = 20
+		}
+		off := clampHelpOffset(a.detail.offset, len(right), viewH)
+		for i := 0; i < viewH; i++ {
+			l := ""
+			if i < len(left) {
+				l = left[i]
+			}
+			r := ""
+			if off+i < len(right) {
+				r = right[off+i]
+			}
+			line := padRight(truncate(l, lw), lw) + styleDim.Render(" │ ") + truncate(r, rw)
+			b.WriteString(truncate(line, a.width))
+			b.WriteByte('\n')
+		}
 	}
-	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  PgUp/PgDn 翻页  esc 返回", "↑/↓ scroll  PgUp/PgDn page  esc back")))
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动快捷键  PgUp/PgDn 翻页  esc 返回", "↑/↓ scroll keys  PgUp/PgDn page  esc back")))
 	return b.String()
 }
 
-func helpLines() []string {
-	rows := [][2]string{
+func clampHelpOffset(off, total, viewH int) int {
+	max := total - viewH
+	if max < 0 {
+		max = 0
+	}
+	if off > max {
+		off = max
+	}
+	if off < 0 {
+		off = 0
+	}
+	return off
+}
+
+// helpLogo 是用横线、竖线和斜线拼成的 gitc 线框标识。
+var helpLogo = []string{
+	" ╱───╲   ╷   ─────   ╱───╲",
+	" │       │     │     │",
+	" │  ╭─╮  │     │     │",
+	" │  ╰─╯  │     │     │",
+	" ╲───╱   ╵     ╵     ╲───╱",
+}
+
+// helpBrandLines 返回帮助页左栏：品牌图标、描述与 GitHub 信息。
+func helpBrandLines() []string {
+	lines := []string{}
+	for _, line := range helpLogo {
+		lines = append(lines, "  "+styleAccent.Render(line))
+	}
+	lines = append(lines, "",
+		"  "+styleTitle.Render(i18n.S("终端里的 Git 工作台", "a fast terminal Git workspace")),
+		"  "+styleDim.Render(i18n.S("流式加载 · 键鼠操作 · 跨平台", "streaming · mouse & keyboard · cross-platform")),
+		"",
+		"  "+styleTitle.Render(i18n.S("项目信息", "Project")),
+		"  "+styleAccent.Render(padRight("GitHub", 10))+"github.com/ssk-wh/gitc",
+		"  "+styleAccent.Render(padRight(i18n.S("发布页", "Releases"), 10))+"/releases",
+		"  "+styleAccent.Render(padRight(i18n.S("问题反馈", "Issues"), 10))+"/issues",
+		"  "+styleAccent.Render(padRight(i18n.S("升级", "Update"), 10))+"gitc --update",
+	)
+	return lines
+}
+
+// helpKeyLines 返回帮助页右栏：快捷键标题与按键说明。
+func helpKeyLines() []string {
+	lines := []string{styleTitle.Render(i18n.S("快捷键", "Keybindings")), ""}
+	for _, r := range helpRows() {
+		lines = append(lines, "  "+styleAccent.Render(padRight(r[0], 22))+r[1])
+	}
+	return lines
+}
+
+func helpLeftWidth(width int) int {
+	switch {
+	case width >= 110:
+		return 38
+	case width >= 100:
+		return 36
+	default:
+		return 34
+	}
+}
+
+// helpRows 是快捷键数据，供单栏与双栏布局复用。
+func helpRows() [][2]string {
+	return [][2]string{
 		{"↑↓", i18n.S("当前区选择/滚动；内容区方向键上下翻页", "select/scroll in current pane")},
 		{"PgUp / PgDn", i18n.S("翻页（内容区整页滚动）", "page up/down (full page in content)")},
 		{"Tab / ←→", i18n.S("按顺序切换 7 个区域", "cycle 7 panes")},
@@ -1576,7 +1666,10 @@ func helpLines() []string {
 		{"右键项目 / worktree", i18n.S("添加项目 / 切换 / 新建 / 锁定 / prune 失效记录 / 文件管理器打开", "add/switch project / new / lock / prune / reveal in file manager")},
 		{"q / Ctrl+C", i18n.S("退出", "quit")},
 	}
-	// 顶部独立区域：项目与 GitHub 信息
+}
+
+// helpLines 是窄屏 / 兼容用的单栏帮助内容。
+func helpLines() []string {
 	lines := []string{
 		"  " + styleTitle.Render(i18n.S("项目信息", "Project")),
 		"  " + styleAccent.Render(padRight("GitHub", 12)) + "https://github.com/ssk-wh/gitc",
@@ -1588,7 +1681,7 @@ func helpLines() []string {
 		"",
 		"  " + styleTitle.Render(i18n.S("快捷键", "Keybindings")),
 	}
-	for _, r := range rows {
+	for _, r := range helpRows() {
 		lines = append(lines, "  "+styleAccent.Render(padRight(r[0], 22))+r[1])
 	}
 	return lines

@@ -879,3 +879,20 @@ func TestCommitMenuPushOnlyForUnpushedLocal(t *testing.T) {
 		t.Fatal("分离 HEAD 时不应显示推送项")
 	}
 }
+
+// TestToastExpiresAndStaleTimerIgnored 验证提示 1 秒到期清空，旧定时器不影响新提示。
+func TestToastExpiresAndStaleTimerIgnored(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.setToast("第一条", false)
+	first := a.toastGen
+	a.setToast("第二条", true)
+	second := a.toastGen
+	a.Update(toastExpireMsg{gen: first})
+	if a.toast != "第二条" || !a.toastErr {
+		t.Fatalf("旧定时器误清除了新提示: %q err=%v", a.toast, a.toastErr)
+	}
+	a.Update(toastExpireMsg{gen: second})
+	if a.toast != "" || a.toastErr {
+		t.Fatalf("提示到期未清空: %q err=%v", a.toast, a.toastErr)
+	}
+}
