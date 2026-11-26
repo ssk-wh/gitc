@@ -132,7 +132,7 @@ func (a *App) renderPaneBox(b paneBox) []string {
 	innerW := b.w - 2
 	innerH := b.h - 2
 	content := a.paneContent(b.pane, innerW, innerH)
-	lines := drawBox(title, info, innerW, innerH, a.pane == b.pane, content)
+	lines := drawBox(title, info, innerW, innerH, a.paneFocused(b.pane), content)
 	a.drawPaneScrollbar(lines, b)
 	return lines
 }
@@ -145,7 +145,7 @@ func (a *App) drawPaneScrollbar(lines []string, b paneBox) {
 		return
 	}
 	style := styleDim
-	if a.pane == b.pane {
+	if a.paneFocused(b.pane) {
 		style = styleAccent.Bold(true)
 	}
 	seg := style.Render("┃")
@@ -223,6 +223,24 @@ func (a *App) paneContent(p Pane, w, h int) []string {
 	return lines
 }
 
+// choiceMenuOpen 表示当前有浮动选择菜单；此时源区域让出激活色，交给菜单边框。
+func (a *App) choiceMenuOpen() bool {
+	return a.modal != nil && a.modal.kind == modalChoice
+}
+
+// paneFocused 判断区域是否显示激活边框。
+func (a *App) paneFocused(p Pane) bool {
+	return a.pane == p && !a.choiceMenuOpen()
+}
+
+func activeBorderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(colorGood).Bold(true)
+}
+
+func inactiveBorderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(colorDim)
+}
+
 // drawBox 绘制 lazygit 风格边框：左上角标题、右下角信息、焦点绿色。
 func drawBox(title, info string, innerW, innerH int, focused bool, content []string) []string {
 	if innerW < 0 {
@@ -231,9 +249,9 @@ func drawBox(title, info string, innerW, innerH int, focused bool, content []str
 	if innerH < 0 {
 		innerH = 0
 	}
-	border := lipgloss.NewStyle().Foreground(colorDim)
+	border := inactiveBorderStyle()
 	if focused {
-		border = lipgloss.NewStyle().Foreground(colorGood).Bold(true)
+		border = activeBorderStyle()
 	}
 	// 上边框：┌─ 标题 ───┐
 	titleText := truncate(" "+title+" ", innerW-1)
