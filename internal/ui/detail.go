@@ -21,6 +21,14 @@ func buildCommitDetailLines(d git.CommitDetail, diff string) []string {
 	if !d.When.IsZero() {
 		lines = append(lines, "Date:   "+d.When.Format("2006-01-02 15:04:05 -0700"))
 	}
+	if len(d.Parents) > 0 {
+		// 展示父提交，合并提交会有多个父。
+		parents := make([]string, 0, len(d.Parents))
+		for _, p := range d.Parents {
+			parents = append(parents, shortSHA(p))
+		}
+		lines = append(lines, "Parent: "+strings.Join(parents, " "))
+	}
 	lines = append(lines, "", sanitize.Line(d.Subject))
 	if d.Body != "" {
 		lines = append(lines, "")
@@ -38,6 +46,38 @@ func buildCommitDetailLines(d git.CommitDetail, diff string) []string {
 	}
 	lines = append(lines, "", i18n.S("── diff ──", "── diff ──"))
 	lines = append(lines, splitLinesCapped(sanitize.Text(diff), maxDetailLines)...)
+	return lines
+}
+
+// buildCompareLines 组装分支对比文档：独有提交列表 + 差异统计。
+func buildCompareLines(s git.CompareSummary) []string {
+	lines := []string{
+		fmt.Sprintf(i18n.S("对比范围: %s..%s", "compare: %s..%s"), sanitize.Line(s.Base), sanitize.Line(s.Target)),
+		"",
+		fmt.Sprintf(i18n.S("目标分支独有的提交 (%d):", "commits only in target (%d):"), len(s.Commits)),
+	}
+	if len(s.Commits) == 0 {
+		lines = append(lines, i18n.S("  （无，两个分支提交相同）", "  (none, both branches point to the same history)"))
+	}
+	for _, c := range s.Commits {
+		line := "  " + c.Short + " " + sanitize.Line(c.Subject)
+		if c.Author != "" {
+			line += "  — " + sanitize.Line(c.Author)
+		}
+		if !c.When.IsZero() {
+			line += " " + c.When.Format("2006-01-02")
+		}
+		lines = append(lines, line)
+	}
+	if s.Truncated {
+		lines = append(lines, i18n.S("  …（提交过多已截断）", "  … (truncated)"))
+	}
+	lines = append(lines, "", i18n.S("变化统计（分叉点 → 目标分支）:", "diff stat (merge-base → target):"))
+	if strings.TrimSpace(s.DiffStat) == "" {
+		lines = append(lines, i18n.S("  （无文件差异）", "  (no file changes)"))
+	} else {
+		lines = append(lines, splitLinesCapped(sanitize.Text(s.DiffStat), maxDetailLines)...)
+	}
 	return lines
 }
 

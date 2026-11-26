@@ -328,9 +328,10 @@ type App struct {
 	projectH           int
 	openRepo           func(string) (git.Service, error)
 	pickDir            func() (string, error)
-	drawerLeftW        int // 抽屉文件列宽度（0 表示默认比例）
-	rightTopH          int // 提交区高度（0 表示默认比例）
-	dragMode           int // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线
+	openDir            func(string) error // 用系统文件管理器打开目录
+	drawerLeftW        int                // 抽屉文件列宽度（0 表示默认比例）
+	rightTopH          int                // 提交区高度（0 表示默认比例）
+	dragMode           int                // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线
 	collapsed          map[string]bool
 
 	branchFilter      string
@@ -419,6 +420,7 @@ func New(svc git.Service) *App {
 		projectCollapsed: map[string]bool{},
 		openRepo:         func(path string) (git.Service, error) { return git.Open(path) },
 		pickDir:          platform.PickDirectory,
+		openDir:          platform.OpenDirectory,
 		changesExpanded:  map[string]bool{},
 	}
 	a.layout = a.builder.Layout()

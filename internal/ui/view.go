@@ -515,6 +515,9 @@ func (a *App) viewProjectsPanel(width, height int) string {
 			if worktreeInvalid(*r.worktree) {
 				label += i18n.S("（失效）", " (invalid)")
 			}
+			if r.worktree.Locked {
+				label += i18n.S("（锁定）", " (locked)")
+			}
 		}
 		branch := ""
 		if r.worktree != nil {
@@ -731,7 +734,7 @@ func (a *App) infoLinesWith(width int, add func([]string, string, lipgloss.Style
 		return add(nil, i18n.S("（没有选中的提交）", "(no commit selected)"), styleDim)
 	}
 	var out []string
-	// 头部固定三行两列对齐：Commit / Author / Date
+	// 头部两列对齐：Commit / Author / Date / Parent
 	out = add(out, fmt.Sprintf("%-8s%s", "Commit", c.Short), styleBold)
 	author := sanitize.Line(c.Author)
 	if a.commitAuthor != "" {
@@ -739,6 +742,13 @@ func (a *App) infoLinesWith(width int, add func([]string, string, lipgloss.Style
 	}
 	out = add(out, fmt.Sprintf("%-8s%s", "Author", author), styleBold)
 	out = add(out, fmt.Sprintf("%-8s%s", "Date", c.When.Format("02 Jan 2006 15:04")), styleBold)
+	if len(c.Parents) > 0 {
+		parents := make([]string, 0, len(c.Parents))
+		for _, p := range c.Parents {
+			parents = append(parents, shortSHA(p))
+		}
+		out = add(out, fmt.Sprintf("%-8s%s", "Parent", strings.Join(parents, " ")), styleBold)
+	}
 	var refNames []string
 	for _, r := range a.refsAt(c.Hash) {
 		switch r.Kind {
@@ -1559,7 +1569,7 @@ func helpLines() []string {
 		{"M", i18n.S("冲突态 continue / abort", "resolve merge/rebase: continue / abort")},
 		{"T", i18n.S("切换主题（default/light/ocean/forest/fire/rose/high-contrast）", "cycle theme")},
 		{"L / R / ?", i18n.S("命令日志 / 刷新 / 帮助", "command log / refresh / help")},
-		{"右键项目区标题", i18n.S("添加项目 / 切换项目 / 新建 worktree（系统目录选择框）", "add/switch projects / new worktree (system picker)")},
+		{"右键项目 / worktree", i18n.S("添加项目 / 切换 / 新建 / 锁定 / prune 失效记录 / 文件管理器打开", "add/switch project / new / lock / prune / reveal in file manager")},
 		{"q / Ctrl+C", i18n.S("退出", "quit")},
 	}
 	// 顶部独立区域：项目与 GitHub 信息

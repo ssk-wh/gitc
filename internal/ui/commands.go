@@ -55,6 +55,37 @@ type opDoneMsg struct {
 	err  error
 }
 
+// compareMsg 是分支对比结果。
+type compareMsg struct {
+	title   string
+	summary git.CompareSummary
+	err     error
+}
+
+// compareBranchCmd 在详情浮层展示所选分支相对当前分支的独有提交与差异统计。
+// 这是只读操作，不占用 busy 状态。
+func (a *App) compareBranchCmd(ref git.Ref) tea.Cmd {
+	base := a.status.Branch
+	if base == "" {
+		base = "HEAD"
+	}
+	if ref.Name == base {
+		a.setToast(i18n.S("已在当前分支，无需对比", "already on this branch"), false)
+		return nil
+	}
+	target := ref.Name
+	title := fmt.Sprintf(i18n.S("对比 %s..%s", "compare %s..%s"), base, target)
+	a.overlay = overlayDetail
+	a.detail = detailModel{loading: true, kind: "compare", title: title}
+	svc := a.svc
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+		defer cancel()
+		sum, err := svc.CompareBranches(ctx, base, target, 0)
+		return compareMsg{title: title, summary: sum, err: err}
+	}
+}
+
 // detailMsg 是详情加载结果。
 type detailMsg struct {
 	sha    string

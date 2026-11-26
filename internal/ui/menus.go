@@ -219,9 +219,19 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 				})
 				return nil
 			}},
-			{label: i18n.S("复制分支名", "copy branch name"), action: func(a *App) tea.Cmd {
-				return a.copyToClipboard(ref.Name)
-			}},
+		}
+		if !ref.Head {
+			out = append(out, choice{label: i18n.S("对比与当前分支", "compare with current"), action: func(a *App) tea.Cmd {
+				return a.compareBranchCmd(ref)
+			}})
+		}
+		if ref.Upstream != "" {
+			name := ref.Name
+			out = append(out, choice{label: i18n.S("取消上游（"+ref.Upstream+"）", "unset upstream ("+ref.Upstream+")"), action: func(a *App) tea.Cmd {
+				return a.runOp("unset-upstream "+name, func(ctx context.Context) (string, error) {
+					return a.svc.UnsetUpstream(ctx, name)
+				})
+			}})
 		}
 		remote, hasRemote := a.remoteRefForBranch(ref)
 		if !hasRemote {
@@ -252,6 +262,9 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 				}},
 			)
 		}
+		out = append(out, choice{label: i18n.S("复制分支名", "copy branch name"), action: func(a *App) tea.Cmd {
+			return a.copyToClipboard(ref.Name)
+		}})
 		return out
 	case sideRemote:
 		local := remoteLocalName(ref.Name)
@@ -266,6 +279,20 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 			{label: i18n.S("当前分支 rebase 到该分支", "rebase current onto this"), action: func(a *App) tea.Cmd {
 				a.rebasePrompt(ref)
 				return nil
+			}},
+			{label: i18n.S("对比与当前分支", "compare with current"), action: func(a *App) tea.Cmd {
+				return a.compareBranchCmd(ref)
+			}},
+			{label: i18n.S("设为当前分支上游", "set as upstream"), action: func(a *App) tea.Cmd {
+				cur := a.status.Branch
+				if cur == "" {
+					a.setToast(i18n.S("当前为分离 HEAD，无法设置上游", "detached HEAD; cannot set upstream"), true)
+					return nil
+				}
+				target := ref.Name
+				return a.runOp("set-upstream "+target, func(ctx context.Context) (string, error) {
+					return a.svc.SetUpstream(ctx, cur, target)
+				})
 			}},
 			{label: i18n.S("删除远端分支", "delete remote branch"), action: func(a *App) tea.Cmd {
 				return a.sidebarDelete(&sideItem{kind: sideRemote, ref: ref})
@@ -370,6 +397,9 @@ func (a *App) commitMenuChoices(c *git.Commit) []choice {
 		}},
 		{label: i18n.S("复制完整 sha", "copy sha"), action: func(a *App) tea.Cmd {
 			return a.copyToClipboard(c.Hash)
+		}},
+		{label: i18n.S("复制短 sha", "copy short sha"), action: func(a *App) tea.Cmd {
+			return a.copyToClipboard(shortSHA(c.Hash))
 		}},
 		{label: i18n.S("复制提交信息", "copy message"), action: func(a *App) tea.Cmd {
 			return a.copyToClipboard(c.Subject)
@@ -748,10 +778,25 @@ func (a *App) openProjectMenu(focus int) {
 				return nil
 			}})
 		}
-		choices = append(choices, choice{label: i18n.S("新建 worktree…", "new worktree..."), action: func(a *App) tea.Cmd {
-			a.newWorktreePrompt(p)
-			return nil
-		}})
+		prunePath := p.Path
+		choices = append(choices,
+			choice{label: i18n.S("新建 worktree…", "new worktree..."), action: func(a *App) tea.Cmd {
+				a.newWorktreePrompt(p)
+				return nil
+			}},
+			choice{label: i18n.S("清理失效 worktree 记录（prune）", "prune invalid worktrees"), action: func(a *App) tea.Cmd {
+				return a.runOp("worktree prune", func(ctx context.Context) (string, error) {
+					baseSvc, err := a.openRepo(prunePath)
+					if err != nil {
+						return "", err
+					}
+					return baseSvc.PruneWorktrees(ctx)
+				})
+			}},
+			choice{label: i18n.S("在文件管理器中打开", "open in file manager"), action: func(a *App) tea.Cmd {
+				return a.openInFileManager(p.Path)
+			}},
+		)
 		if len(a.projects) > 1 {
 			choices = append(choices, choice{label: i18n.S("移除项目 "+p.Name, "remove project "+p.Name), action: func(a *App) tea.Cmd {
 				return a.removeProject(p)
@@ -769,6 +814,36 @@ func (a *App) openWorktreeMenu(projectPath string, wt git.Worktree) {
 		choices = append(choices, choice{label: i18n.S("切换到此 worktree", "switch to this worktree"), action: func(a *App) tea.Cmd {
 			return a.switchToWorktree(projectPath, wt.Path)
 		}})
+	}
+	if !invalid {
+		wtPath := wt.Path
+		choices = append(choices, choice{label: i18n.S("在文件管理器中打开", "open in file manager"), action: func(a *App) tea.Cmd {
+			return a.openInFileManager(wtPath)
+		}})
+		// 主 worktree 不会被 prune，锁定它没有意义。
+		if !wt.Main {
+			if wt.Locked {
+				choices = append(choices, choice{label: i18n.S("解锁 worktree", "unlock worktree"), action: func(a *App) tea.Cmd {
+					return a.runOp("worktree unlock "+filepath.Base(wtPath), func(ctx context.Context) (string, error) {
+						baseSvc, err := a.openRepo(projectPath)
+						if err != nil {
+							return "", err
+						}
+						return baseSvc.UnlockWorktree(ctx, wtPath)
+					})
+				}})
+			} else {
+				choices = append(choices, choice{label: i18n.S("锁定 worktree", "lock worktree"), action: func(a *App) tea.Cmd {
+					return a.runOp("worktree lock "+filepath.Base(wtPath), func(ctx context.Context) (string, error) {
+						baseSvc, err := a.openRepo(projectPath)
+						if err != nil {
+							return "", err
+						}
+						return baseSvc.LockWorktree(ctx, wtPath, "")
+					})
+				}})
+			}
+		}
 	}
 	if invalid {
 		choices = append(choices, choice{label: i18n.S("清理失效 worktree 记录", "prune invalid worktree"), action: func(a *App) tea.Cmd {
@@ -813,6 +888,18 @@ func (a *App) openWorktreeMenu(projectPath string, wt git.Worktree) {
 	a.choose(i18n.S("worktree "+worktreeLabel(wt), "worktree "+worktreeLabel(wt)), choices)
 }
 
+// openInFileManager 用系统文件管理器打开目录，失败时提示。
+func (a *App) openInFileManager(path string) tea.Cmd {
+	if a.openDir == nil {
+		a.setToast(i18n.S("当前环境不支持打开文件管理器", "file manager is unavailable"), true)
+		return nil
+	}
+	if err := a.openDir(path); err != nil {
+		a.setToast(i18n.S("打开文件管理器失败: ", "open file manager failed: ")+firstLine(err.Error()), true)
+	}
+	return nil
+}
+
 // projectByPath 返回路径对应的项目。
 func (a *App) projectByPath(path string) *projectEntry {
 	for i := range a.projects {
@@ -827,7 +914,7 @@ func (a *App) projectByPath(path string) *projectEntry {
 func (a *App) newWorktreePrompt(p projectEntry) {
 	base := filepath.Join(filepath.Dir(p.Path), p.Name+"-wt")
 	branch := "wt/" + strings.ReplaceAll(p.Name, " ", "-")
-	a.promptText(i18n.S("新建 worktree：第一行路径，第二行新分支（Ctrl+S 创建）", "new worktree: path on line 1, new branch on line 2 (Ctrl+S creates)"), "", base+string(rune(10))+branch, func(a *App, v string) tea.Cmd {
+	a.promptText(i18n.S("新建 worktree：第一行路径，第二行分支（不存在则新建，已存在则检出；Ctrl+S 创建）", "new worktree: path on line 1, branch on line 2 (create if absent, checkout if exists)"), "", base+string(rune(10))+branch, func(a *App, v string) tea.Cmd {
 		nl := string(rune(10))
 		parts := strings.SplitN(strings.ReplaceAll(v, string(rune(13))+nl, nl), nl, 2)
 		path := strings.TrimSpace(parts[0])
@@ -997,6 +1084,9 @@ func (a *App) openInfoHeaderMenu() {
 			}},
 			choice{label: i18n.S("复制完整 sha", "copy sha"), action: func(a *App) tea.Cmd {
 				return a.copyToClipboard(sha)
+			}},
+			choice{label: i18n.S("复制短 sha", "copy short sha"), action: func(a *App) tea.Cmd {
+				return a.copyToClipboard(shortSHA(sha))
 			}},
 			choice{label: i18n.S("查看完整详情", "view full details"), action: func(a *App) tea.Cmd {
 				return a.openCommitDetail(sha)

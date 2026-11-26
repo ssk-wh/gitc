@@ -81,12 +81,80 @@ func (r *Repo) CreateBranch(ctx context.Context, name, startPoint string, checko
 	return r.run(ctx, false, args...)
 }
 
-// RenameBranch 重命名分支。
-func (r *Repo) RenameBranch(ctx context.Context, oldName, newName string) (string, error) {
-	if oldName == "" {
-		return r.run(ctx, false, "branch", "-m", newName)
+// branchUpstream 返回分支的上游短名（如 origin/main）；没有上游时返回空串。
+func (r *Repo) branchUpstream(ctx context.Context, branch string) string {
+	out, err := r.run(ctx, true, "rev-parse", "--abbrev-ref", branch+"@{upstream}")
+	if err != nil {
+		return ""
 	}
-	return r.run(ctx, false, "branch", "-m", oldName, newName)
+	return strings.TrimSpace(out)
+}
+
+// splitUpstream 把 origin/main 拆成远端名与分支名。
+func splitUpstream(upstream string) (remote, branch string) {
+	if i := strings.IndexByte(upstream, '/'); i > 0 {
+		return upstream[:i], upstream[i+1:]
+	}
+	return "", upstream
+}
+
+// RenameBranch 重命名分支，并处理同名上游：
+//   - 远端已存在 <remote>/<新名> 时改为跟踪它；
+//   - 否则清除旧的同名上游，避免重命名后仍跟踪 <remote>/<旧名>；
+//   - 上游本来就跟其他分支同名（跨分支跟踪）时保持不变。
+func (r *Repo) RenameBranch(ctx context.Context, oldName, newName string) (string, error) {
+	newName = strings.TrimSpace(newName)
+	if newName == "" {
+		return "", errors.New("分支名不能为空")
+	}
+	old := strings.TrimSpace(oldName)
+	if old == "" {
+		// 未指定旧名时按当前分支处理，便于同样修正上游。
+		old = strings.TrimSpace(r.CurrentBranch(ctx))
+	}
+	var oldUpstream string
+	if old != "" {
+		oldUpstream = r.branchUpstream(ctx, old)
+	}
+	var out string
+	var err error
+	if old == "" {
+		out, err = r.run(ctx, false, "branch", "-m", newName)
+	} else {
+		out, err = r.run(ctx, false, "branch", "-m", old, newName)
+	}
+	if err != nil || old == "" || oldUpstream == "" {
+		return out, err
+	}
+	remote, upstreamBranch := splitUpstream(oldUpstream)
+	if remote == "" || upstreamBranch != old {
+		// 上游跟踪的是别的分支名，保持原样。
+		return out, nil
+	}
+	newUpstream := remote + "/" + newName
+	if _, err := r.run(ctx, true, "rev-parse", "--verify", "--quiet", "refs/remotes/"+newUpstream); err == nil {
+		note, serr := r.run(ctx, false, "branch", "--set-upstream-to="+newUpstream, newName)
+		out += note
+		if serr == nil {
+			out += "上游已更新为 " + newUpstream + string(rune(10))
+		}
+		return out, nil
+	}
+	// 远端还没有新名字，先清掉指向旧名的上游，推送时会重新设置。
+	note, uerr := r.run(ctx, false, "branch", "--unset-upstream", newName)
+	out += note
+	if uerr == nil {
+		out += "旧上游 " + oldUpstream + " 已清除（推送时会重新设置）" + string(rune(10))
+	}
+	return out, nil
+}
+
+// UnsetUpstream 取消分支的上游跟踪；branch 为空时作用于当前分支。
+func (r *Repo) UnsetUpstream(ctx context.Context, branch string) (string, error) {
+	if strings.TrimSpace(branch) == "" {
+		return r.run(ctx, false, "branch", "--unset-upstream")
+	}
+	return r.run(ctx, false, "branch", "--unset-upstream", branch)
 }
 
 // DeleteBranch 删除本地分支；force 对应 -D。
@@ -323,8 +391,11 @@ func (r *Repo) Worktrees(ctx context.Context) ([]Worktree, error) {
 	return list, nil
 }
 
-// AddWorktree 新建分支并添加 worktree。
+// AddWorktree 添加 worktree：分支不存在时新建，已存在时直接检出该分支。
 func (r *Repo) AddWorktree(ctx context.Context, path, branch string) (string, error) {
+	if _, err := r.run(ctx, true, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		return r.run(ctx, false, "worktree", "add", path, branch)
+	}
 	return r.run(ctx, false, "worktree", "add", "-b", branch, path)
 }
 
@@ -341,6 +412,21 @@ func (r *Repo) RemoveWorktree(ctx context.Context, path string, force bool) (str
 // PruneWorktrees 清理已失效的 worktree 记录（不会删除目录内容）。
 func (r *Repo) PruneWorktrees(ctx context.Context) (string, error) {
 	return r.run(ctx, false, "worktree", "prune")
+}
+
+// LockWorktree 锁定 worktree，防止被 prune/remove；reason 可留空。
+func (r *Repo) LockWorktree(ctx context.Context, path, reason string) (string, error) {
+	args := []string{"worktree", "lock"}
+	if strings.TrimSpace(reason) != "" {
+		args = append(args, "--reason", reason)
+	}
+	args = append(args, path)
+	return r.run(ctx, false, args...)
+}
+
+// UnlockWorktree 解除 worktree 锁定。
+func (r *Repo) UnlockWorktree(ctx context.Context, path string) (string, error) {
+	return r.run(ctx, false, "worktree", "unlock", path)
 }
 
 // CommitMessage 读取提交的完整原始信息（%B）。

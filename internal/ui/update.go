@@ -187,6 +187,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				msg += i18n.S(" — 有 git 进程占用，检查 .git/index.lock", " — .git/index.lock is held by another process")
 			case strings.Contains(lower, "already checked out at"):
 				msg += i18n.S(" — 该分支已在其他工作树检出，不能重复检出", " — branch is already checked out in another worktree")
+			case strings.Contains(lower, "locked worktree"), strings.Contains(lower, "is locked"):
+				msg += i18n.S(" — 该 worktree 已锁定，请先在右键菜单解锁", " — worktree is locked; unlock it first")
 			case strings.Contains(lower, "conflict"), strings.Contains(lower, "resolve all conflicts"):
 				msg += i18n.S(" — 按 M 处理冲突", " — press M to resolve")
 			}
@@ -195,7 +197,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.setToast(i18n.S("完成: ", "done: ")+m.name, false)
 		}
-		return a, tea.Batch(a.refreshCmd(false), a.reloadLogCmd())
+		cmds := []tea.Cmd{a.refreshCmd(false), a.reloadLogCmd()}
+		if strings.HasPrefix(m.name, "worktree") || strings.HasPrefix(m.name, "remove worktree") {
+			// 锁定/移除/清理后立即刷新 worktree 列表，不必等定时轮询。
+			cmds = append(cmds, a.loadWorktreesCmd())
+		}
+		return a, tea.Batch(cmds...)
 
 	case remoteTagMsg:
 		if m.err == nil {
@@ -296,6 +303,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.clearCommitSelection()
 		a.editCommitMessagePrompt(m.sha, m.message)
+		return a, nil
+
+	case compareMsg:
+		if a.overlay != overlayDetail || a.detail.kind != "compare" {
+			return a, nil
+		}
+		a.detail.loading = false
+		if m.err != nil {
+			a.detail.err = firstLine(m.err.Error())
+			a.detail.lines = nil
+			return a, nil
+		}
+		a.detail.title = m.title
+		a.detail.lines = buildCompareLines(m.summary)
+		a.detail.offset = 0
 		return a, nil
 
 	case detailMsg:
