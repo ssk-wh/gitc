@@ -3060,3 +3060,45 @@ func TestChoiceMenuBorderAligned(t *testing.T) {
 		}
 	}
 }
+
+// TestWorktreesMsgFiltersPrunable 失效 worktree 不应继续出现在项目树中。
+func TestWorktreesMsgFiltersPrunable(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.currentPath = cleanProjectPath(root)
+	a.currentProjectPath = cleanProjectPath(root)
+	missing := filepath.Join(t.TempDir(), "gone")
+	a.Update(worktreesMsg{list: map[string][]git.Worktree{
+		cleanProjectPath(root): {
+			{Path: cleanProjectPath(root), Branch: "main", Main: true},
+			{Path: missing, Branch: "gone", Prunable: true},
+		},
+	}})
+	if rows := a.projectRows(); len(rows) != 1 {
+		t.Fatalf("失效 worktree 仍在树中: %+v", rows)
+	}
+}
+
+// TestInvalidWorktreeMenu 失效 worktree 菜单只提供清理/复制，不提示新建。
+func TestInvalidWorktreeMenu(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.openWorktreeMenu(cleanProjectPath(root), git.Worktree{Path: filepath.Join(t.TempDir(), "gone"), Prunable: true})
+	if a.modal == nil {
+		t.Fatal("菜单未打开")
+	}
+	hasPrune, hasNew := false, false
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "清理") || strings.Contains(c.label, "prune") {
+			hasPrune = true
+		}
+		if strings.Contains(c.label, "新建 worktree") {
+			hasNew = true
+		}
+	}
+	if !hasPrune || hasNew {
+		t.Fatalf("失效 worktree 菜单错误: %+v", a.modal.choices)
+	}
+}

@@ -844,7 +844,20 @@ func (a *App) loadWorktreesCmd() tea.Cmd {
 			svc, err := open(p.Path)
 			if err == nil {
 				if wts, err := svc.Worktrees(ctx); err == nil {
-					out[p.Path] = wts
+					valid := make([]git.Worktree, 0, len(wts))
+					stale := false
+					for _, wt := range wts {
+						if worktreeInvalid(wt) {
+							stale = true
+							continue
+						}
+						valid = append(valid, wt)
+					}
+					if stale {
+						// 目录已删除但元数据残留：静默清理，避免继续列出失效 worktree
+						_, _ = svc.PruneWorktrees(ctx)
+					}
+					out[p.Path] = valid
 				}
 			}
 			cancel()

@@ -250,9 +250,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case worktreesMsg:
 		for p, list := range m.list {
+			valid := make([]git.Worktree, 0, len(list))
 			for i := range list {
 				list[i].Path = cleanProjectPath(list[i].Path)
+				if worktreeInvalid(list[i]) {
+					continue
+				}
+				valid = append(valid, list[i])
 			}
+			list = valid
 			a.worktrees[p] = list
 			if len(list) > 0 && list[0].Branch != "" {
 				a.projectBranch[p] = list[0].Branch
@@ -2160,6 +2166,10 @@ func (a *App) activateProjectRow() tea.Cmd {
 	}
 	r := rows[a.projectSel]
 	if r.worktree != nil {
+		if worktreeInvalid(*r.worktree) {
+			a.setToast(i18n.S("worktree 已失效：目录或 git 元数据不存在，可右键清理记录", "worktree is invalid: directory or git metadata is missing; right-click to prune"), true)
+			return nil
+		}
 		return a.switchToWorktree(r.project.Path, r.worktree.Path)
 	}
 	if len(a.worktrees[r.project.Path]) > 1 {

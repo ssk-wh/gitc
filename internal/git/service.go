@@ -48,6 +48,7 @@ type Service interface {
 	Worktrees(ctx context.Context) ([]Worktree, error)
 	AddWorktree(ctx context.Context, path, branch string) (string, error)
 	RemoveWorktree(ctx context.Context, path string, force bool) (string, error)
+	PruneWorktrees(ctx context.Context) (string, error)
 	CommitMessage(ctx context.Context, sha string) (string, error)
 	EditCommitMessage(ctx context.Context, sha, message string) (string, error)
 	Squash(ctx context.Context, head, parent, message string) (string, error)
