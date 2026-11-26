@@ -38,6 +38,11 @@ type refreshMsg struct {
 	state   git.RepoState
 	stashes []git.Stash
 	err     error
+
+	statusErr  error
+	refsErr    error
+	stateErr   error
+	stashesErr error
 }
 
 // logBatchMsg 是一批提交（流式加载）。
@@ -50,6 +55,7 @@ type logBatchMsg struct {
 
 // opDoneMsg 是一次变更操作的结果。
 type opDoneMsg struct {
+	id   int
 	name string
 	out  string
 	err  error
@@ -57,6 +63,8 @@ type opDoneMsg struct {
 
 // compareMsg 是分支对比结果。
 type compareMsg struct {
+	gen     int
+	key     string
 	title   string
 	summary git.CompareSummary
 	err     error
@@ -66,15 +74,20 @@ type compareMsg struct {
 // 这是只读操作，不占用 busy 状态。
 func (a *App) compareBranchCmd(ref git.Ref) tea.Cmd {
 	base := a.status.Branch
-	if base == "" {
-		base = "HEAD"
-	}
-	if ref.Name == base {
+	if ref.Kind == git.RefLocal && ref.Name == base {
 		a.setToast(i18n.S("已在当前分支，无需对比", "already on this branch"), false)
 		return nil
 	}
-	target := ref.Name
-	title := fmt.Sprintf(i18n.S("对比 %s..%s", "compare %s..%s"), base, target)
+	baseName := base
+	if base == "" {
+		base = "HEAD"
+	} else {
+		base = "refs/heads/" + base
+	}
+	target := refIdentity(ref)
+	title := fmt.Sprintf(i18n.S("对比 %s..%s", "compare %s..%s"), baseName, ref.Name)
+	key := "compare:" + base + ".." + target
+	gen := a.beginDetail(key)
 	a.overlay = overlayDetail
 	a.detail = detailModel{loading: true, kind: "compare", title: title}
 	svc := a.svc
@@ -82,12 +95,14 @@ func (a *App) compareBranchCmd(ref git.Ref) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
 		sum, err := svc.CompareBranches(ctx, base, target, 0)
-		return compareMsg{title: title, summary: sum, err: err}
+		return compareMsg{gen: gen, key: key, title: title, summary: sum, err: err}
 	}
 }
 
 // detailMsg 是详情加载结果。
 type detailMsg struct {
+	gen    int
+	key    string
 	sha    string
 	kind   string
 	title  string
@@ -181,7 +196,7 @@ func (a *App) openBranchFilterMenu() {
 			label += i18n.S("（当前）", " (current)")
 		}
 		choices = append(choices, choice{label: label, desc: r.Name, action: func(a *App) tea.Cmd {
-			return a.setBranchFilter(r.Name, "", r.Name)
+			return a.setBranchFilter(refIdentity(r), "", r.Name)
 		}})
 	}
 	a.choose(i18n.S("显示某个分支的提交", "show commits of a branch"), choices)
@@ -251,21 +266,31 @@ func (a *App) refreshCmdWith(quick, auto bool) tea.Cmd {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			m.status, m.err = svc.Status(ctx, !quick)
+			m.status, m.statusErr = svc.Status(ctx, !quick)
 		}()
 		go func() {
 			defer wg.Done()
-			m.refs, _ = svc.Refs(ctx)
+			m.refs, m.refsErr = svc.Refs(ctx)
 		}()
 		if !quick {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				m.stashes, _ = svc.Stashes(ctx)
+				m.stashes, m.stashesErr = svc.Stashes(ctx)
 			}()
 		}
 		wg.Wait()
-		m.state, _ = svc.State(ctx)
+		m.state, m.stateErr = svc.State(ctx)
+		m.err = m.statusErr
+		if m.err == nil {
+			m.err = m.refsErr
+		}
+		if m.err == nil {
+			m.err = m.stateErr
+		}
+		if m.err == nil {
+			m.err = m.stashesErr
+		}
 		return m
 	}
 }
@@ -309,14 +334,22 @@ func (a *App) reloadLogCmd() tea.Cmd {
 
 // runOp 执行一次变更操作；结束后刷新状态与日志。
 func (a *App) runOp(name string, fn func(ctx context.Context) (string, error)) tea.Cmd {
+	if a.busy {
+		return a.busyToast()
+	}
 	a.busy = true
+	a.opID++
+	id := a.opID
 	a.taskName = name
+	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
+	a.opCancel = cancel
 	return tea.Batch(func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
-		defer cancel()
-		a.opCancel = cancel
 		out, err := fn(ctx)
-		return opDoneMsg{name: name, out: out, err: err}
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		cancel()
+		return opDoneMsg{id: id, name: name, out: out, err: err}
 	}, spinnerTickCmd())
 }
 
@@ -331,6 +364,7 @@ func (a *App) runSearch(query string) tea.Cmd {
 	svc := a.svc
 	a.searching = true
 	a.searchQuery = query
+	a.searchResults = nil
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
@@ -792,6 +826,8 @@ func (a *App) resetForProject() {
 	a.refreshGen++
 	a.logGen++
 	a.searchGen++
+	a.detailGen++
+	a.detailKey = ""
 	a.filesGen++
 	a.contentGen++
 	a.busy = false
@@ -1074,7 +1110,21 @@ func (a *App) choose(title string, choices []choice) {
 
 // —— 详情加载 ——
 
+func (a *App) beginDetail(key string) int {
+	a.detailGen++
+	a.detailKey = key
+	return a.detailGen
+}
+
+func (a *App) closeDetail() {
+	a.overlay = overlayNone
+	a.detailGen++
+	a.detailKey = ""
+}
+
 func (a *App) openCommitDetail(sha string) tea.Cmd {
+	key := "commit:" + sha
+	gen := a.beginDetail(key)
 	a.overlay = overlayDetail
 	a.detail = detailModel{loading: true, sha: sha, kind: "commit", title: sha}
 	svc := a.svc
@@ -1083,17 +1133,19 @@ func (a *App) openCommitDetail(sha string) tea.Cmd {
 		defer cancel()
 		d, err := svc.CommitDetail(ctx, sha)
 		if err != nil {
-			return detailMsg{sha: sha, kind: "commit", err: err}
+			return detailMsg{gen: gen, key: key, sha: sha, kind: "commit", err: err}
 		}
 		diff, derr := svc.CommitDiff(ctx, sha, "")
 		if derr != nil {
 			diff = i18n.S("（无法读取 diff）", "(failed to load diff)")
 		}
-		return detailMsg{sha: sha, kind: "commit", title: d.Subject, detail: d, diff: diff}
+		return detailMsg{gen: gen, key: key, sha: sha, kind: "commit", title: d.Subject, detail: d, diff: diff}
 	}
 }
 
 func (a *App) openFileDiff(title, path string, staged, untracked bool) tea.Cmd {
+	key := fmt.Sprintf("file:%t:%t:%s", staged, untracked, path)
+	gen := a.beginDetail(key)
 	a.overlay = overlayDetail
 	a.detail = detailModel{loading: true, kind: "file", title: title}
 	svc := a.svc
@@ -1101,19 +1153,21 @@ func (a *App) openFileDiff(title, path string, staged, untracked bool) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
 		diff, err := svc.WorkingDiff(ctx, path, staged, untracked)
-		return detailMsg{sha: "", kind: "file", title: title, diff: diff, err: err}
+		return detailMsg{gen: gen, key: key, sha: "", kind: "file", title: title, diff: diff, err: err}
 	}
 }
 
 func (a *App) openStashDiff(st git.Stash) tea.Cmd {
+	key := "stash:" + st.Hash
+	gen := a.beginDetail(key)
 	a.overlay = overlayDetail
 	a.detail = detailModel{loading: true, kind: "stash", title: st.Subject}
 	svc := a.svc
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
-		diff, err := svc.StashDiff(ctx, st.Index)
-		return detailMsg{sha: "", kind: "stash", title: st.Subject, diff: diff, err: err}
+		diff, err := svc.StashDiff(ctx, st.Hash)
+		return detailMsg{gen: gen, key: key, sha: "", kind: "stash", title: st.Subject, diff: diff, err: err}
 	}
 }
 
@@ -1171,9 +1225,12 @@ func (a *App) loadFilesForSelection() tea.Cmd {
 // loadWorkingFiles 展示工作区文件。
 func (a *App) loadWorkingFiles() tea.Cmd {
 	a.filesGen++
+	sameOwner := a.filesOwner == "work"
 	a.filesOwner = "work"
 	a.setFiles(a.workingFileEntries())
-	a.content = detailModel{title: i18n.S("工作区改动", "working tree")}
+	if !sameOwner {
+		a.content = detailModel{title: i18n.S("工作区改动", "working tree")}
+	}
 	if len(a.files) == 0 {
 		a.content.lines = []string{i18n.S("（工作区没有改动）", "(no local changes)")}
 		return nil
@@ -1190,10 +1247,13 @@ func (a *App) loadCommitFiles(c *git.Commit) tea.Cmd {
 	a.filesGen++
 	gen := a.filesGen
 	owner := "c:" + c.Hash
+	if a.filesOwner != owner {
+		a.files = nil
+		a.fileTree, a.fileRows = nil, nil
+		a.fileSel, a.fileOff = 0, 0
+	}
 	a.filesOwner = owner
 	a.commitBody = ""
-	a.files = nil
-	a.fileSel, a.fileOff = 0, 0
 	a.content = detailModel{loading: true, sha: c.Hash, title: c.Short + " " + sanitize.Line(c.Subject),
 		lines: []string{
 			"commit " + c.Hash,
@@ -1228,22 +1288,29 @@ func (a *App) loadFileContent(f fileEntry, working bool) tea.Cmd {
 		title += i18n.S("  (已暂存)", "  (staged)")
 	}
 	if working && strings.HasSuffix(f.path, "/") {
-		a.content = detailModel{title: title, lines: []string{
+		a.content = detailModel{title: title, entry: f, working: true, lines: []string{
 			i18n.S("未跟踪目录：空格暂存整个目录，d 丢弃", "untracked directory: space to stage, d to discard"),
 		}}
 		return nil
 	}
-	a.content = detailModel{loading: true, title: title, sha: a.filesOwner}
+	owner := "work"
+	if !working {
+		owner = strings.TrimPrefix(a.filesOwner, "c:")
+	}
+	offset := 0
+	if a.content.entry.path == f.path && a.content.working == working && a.content.sha == owner {
+		offset = a.content.offset
+	}
+	a.content = detailModel{loading: true, title: title, sha: owner, entry: f, working: working, offset: offset}
 	if working {
 		path, staged, untracked := f.path, f.staged, f.untracked
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 			defer cancel()
 			diff, err := svc.WorkingDiff(ctx, path, staged, untracked)
-			return contentMsg{gen: gen, path: path, title: title, working: true, diff: diff, err: err}
+			return contentMsg{gen: gen, path: path, title: title, sha: owner, working: true, diff: diff, err: err}
 		}
 	}
-	owner := strings.TrimPrefix(a.filesOwner, "c:")
 	path := f.path
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
@@ -1251,6 +1318,29 @@ func (a *App) loadFileContent(f fileEntry, working bool) tea.Cmd {
 		diff, err := svc.CommitDiff(ctx, owner, path)
 		return contentMsg{gen: gen, path: path, title: title, sha: owner, diff: diff, err: err}
 	}
+}
+
+func (a *App) retryFileView() tea.Cmd {
+	switch a.content.retry {
+	case "content":
+		f := a.content.entry
+		if f.path == "" {
+			if selected := a.selectedFile(); selected != nil {
+				f = *selected
+			}
+		}
+		if f.path != "" {
+			return a.loadFileContent(f, a.content.working)
+		}
+	case "files":
+		sha := strings.TrimPrefix(a.filesOwner, "c:")
+		for i := range a.commits {
+			if a.commits[i].Hash == sha {
+				return a.loadCommitFiles(&a.commits[i])
+			}
+		}
+	}
+	return nil
 }
 
 // commandMsg 是一条已执行命令记录。
@@ -1261,6 +1351,7 @@ type commandMsg struct {
 
 // LogCommand 供 git 层回调：记录命令到右下角命令历史（线程安全）。
 func (a *App) LogCommand(line string) {
+	line = sanitize.Secrets(sanitize.Line(line))
 	select {
 	case a.msgs <- commandMsg{at: time.Now(), line: line}:
 	default:

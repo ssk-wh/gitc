@@ -60,3 +60,39 @@ func TestTextExpandsTabs(t *testing.T) {
 		t.Errorf("tab 应展开为 4 空格: %q", got)
 	}
 }
+
+func TestSecretsRedactsCredentials(t *testing.T) {
+	in := "remote https://user:pass@example.com/repo.git\n" +
+		"Authorization: Bearer topsecret\n" +
+		"Proxy-Authorization: Basic c2VjcmV0\n" +
+		"credential.helper=!echo password=hidden\n" +
+		"token=abc123\n" +
+		"-----BEGIN PRIVATE KEY-----\nprivate\n-----END PRIVATE KEY-----"
+	got := Secrets(in)
+	for _, secret := range []string{"user:pass", "topsecret", "c2VjcmV0", "hidden", "abc123", "private"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("敏感信息未脱敏 %q: %q", secret, got)
+		}
+	}
+	if !strings.Contains(got, "https://***@example.com/repo.git") {
+		t.Errorf("URL 主机未保留: %q", got)
+	}
+}
+
+func TestCommandQuotesAndRedactsArguments(t *testing.T) {
+	got := Command([]string{
+		"push", "https://user:pass@example.com/repo.git",
+		"-c", "http.extraHeader=Authorization: Bearer topsecret",
+		"commit", "-m", "hello world", "quote'arg", "",
+	})
+	for _, secret := range []string{"user:pass", "topsecret"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("命令参数泄露凭据 %q: %q", secret, got)
+		}
+	}
+	for _, want := range []string{"'hello world'", `'quote'\''arg'`, "''", "http.extraHeader=***"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("命令格式缺少 %q: %q", want, got)
+		}
+	}
+}

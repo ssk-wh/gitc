@@ -236,7 +236,7 @@ func TestOpsFlow(t *testing.T) {
 	if err != nil || len(stashes) != 1 {
 		t.Fatalf("stash 列表错误: %v %+v", err, stashes)
 	}
-	if _, err := r.StashPop(ctx, 0); err != nil {
+	if _, err := r.StashPop(ctx, stashes[0].Hash); err != nil {
 		t.Fatal(err)
 	}
 	// reset

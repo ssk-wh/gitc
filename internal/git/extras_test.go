@@ -2,10 +2,386 @@ package git
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLiteralPathspecOperations(t *testing.T) {
+	_, dir := newTestRepo(t)
+	commitFile(t, dir, "a.txt", "base\n", "base a")
+	commitFile(t, dir, "[a].txt", "base\n", "base bracket")
+	r := mustRepo(t, dir)
+	ctx := context.Background()
+
+	writeFile(t, dir, "a.txt", "plain changed\n")
+	writeFile(t, dir, "[a].txt", "bracket changed\n")
+	if _, err := r.Stage(ctx, "[a].txt"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := r.Status(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Staged) != 1 || st.Staged[0].Path != "[a].txt" {
+		t.Fatalf("暂存范围错误: %+v", st.Staged)
+	}
+	if len(st.Unstaged) != 1 || st.Unstaged[0].Path != "a.txt" {
+		t.Fatalf("普通文件被误暂存: %+v", st.Unstaged)
+	}
+	if _, err := r.Unstage(ctx, "[a].txt"); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = r.Status(ctx, true)
+	if len(st.Staged) != 0 || len(st.Unstaged) != 2 {
+		t.Fatalf("取消暂存范围错误: %+v", st)
+	}
+	diff, err := r.WorkingDiff(ctx, "[a].txt", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(diff, "bracket changed") || strings.Contains(diff, "plain changed") {
+		t.Fatalf("diff 范围错误: %q", diff)
+	}
+
+	writeFile(t, dir, "[u].txt", "bracket untracked\n")
+	writeFile(t, dir, "u.txt", "plain untracked\n")
+	if _, err := r.Discard(ctx, true, "[u].txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "[u].txt")); !os.IsNotExist(err) {
+		t.Fatalf("选中的未跟踪文件未删除: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "u.txt")); err != nil {
+		t.Fatalf("未选中的未跟踪文件被删除: %v", err)
+	}
+}
+
+func TestCommandLogAndErrorsAreSanitized(t *testing.T) {
+	r := &Repo{}
+	var logged string
+	r.SetCommandHook(func(line string) { logged = line })
+	r.notify([]string{"push", "https://user:pass@example.com/repo.git", "-c", "http.extraHeader=Authorization: Bearer topsecret"})
+	if strings.Contains(logged, "user:pass") || strings.Contains(logged, "topsecret") {
+		t.Fatalf("命令历史泄露凭据: %q", logged)
+	}
+	if !strings.Contains(logged, "https://***@example.com/repo.git") || !strings.Contains(logged, "http.extraHeader=***") {
+		t.Fatalf("命令历史未保留可读结构: %q", logged)
+	}
+
+	err := (&GitError{
+		Args:   []string{"-c", "credential.helper=!echo password=hidden", "fetch", "https://user:pass@example.com/repo.git"},
+		Output: "fatal: Authorization: Bearer topsecret\n",
+		Err:    errors.New("exit status 128"),
+	}).Error()
+	for _, secret := range []string{"hidden", "user:pass", "topsecret"} {
+		if strings.Contains(err, secret) {
+			t.Fatalf("错误信息泄露凭据 %q: %q", secret, err)
+		}
+	}
+	if !strings.Contains(err, "fatal: Authorization: ***") {
+		t.Fatalf("错误信息未保留诊断上下文: %q", err)
+	}
+}
+
+func TestDiscardWorkingTreePreservesStagedChanges(t *testing.T) {
+	_, dir := newTestRepo(t)
+	commitFile(t, dir, "a.txt", "base\n", "base")
+	r := mustRepo(t, dir)
+	ctx := context.Background()
+	writeFile(t, dir, "a.txt", "staged\n")
+	if _, err := r.Stage(ctx, "a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "a.txt", "working\n")
+	if _, err := r.Discard(ctx, false, "a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "staged\n" {
+		t.Fatalf("工作区未恢复到暂存内容: %q", got)
+	}
+	st, err := r.Status(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Staged) != 1 || len(st.Unstaged) != 0 {
+		t.Fatalf("暂存改动被误清除: %+v", st)
+	}
+}
+
+func TestDiscardAllClearsMixedDirectoryChanges(t *testing.T) {
+	_, dir := newTestRepo(t)
+	commitFile(t, dir, "dir/tracked.txt", "base\n", "base")
+	commitFile(t, dir, "outside.txt", "outside base\n", "outside")
+	r := mustRepo(t, dir)
+	ctx := context.Background()
+
+	writeFile(t, dir, "dir/tracked.txt", "staged\n")
+	if _, err := r.Stage(ctx, "dir/tracked.txt"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "dir/tracked.txt", "working\n")
+	writeFile(t, dir, "dir/new.txt", "new staged\n")
+	if _, err := r.Stage(ctx, "dir/new.txt"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "dir/nested/untracked.txt", "untracked\n")
+	writeFile(t, dir, "outside.txt", "outside changed\n")
+
+	if _, err := r.DiscardAll(ctx, "dir"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "dir/tracked.txt"))
+	if err != nil || string(got) != "base\n" {
+		t.Fatalf("目录内跟踪文件未恢复: %q %v", got, err)
+	}
+	for _, path := range []string{"dir/new.txt", "dir/nested/untracked.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, path)); !os.IsNotExist(err) {
+			t.Fatalf("目录内新增文件未删除 %s: %v", path, err)
+		}
+	}
+	outside, err := os.ReadFile(filepath.Join(dir, "outside.txt"))
+	if err != nil || string(outside) != "outside changed\n" {
+		t.Fatalf("目录外文件被误修改: %q %v", outside, err)
+	}
+	st, err := r.Status(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, changes := range [][]FileChange{st.Staged, st.Unstaged, st.Untracked} {
+		for _, change := range changes {
+			if strings.HasPrefix(change.Path, "dir/") {
+				t.Fatalf("目录内仍有未清除改动: %+v", change)
+			}
+		}
+	}
+}
+
+func TestDiscardAllHandlesStagedRename(t *testing.T) {
+	_, dir := newTestRepo(t)
+	commitFile(t, dir, "old.txt", "base\n", "base")
+	r := mustRepo(t, dir)
+	ctx := context.Background()
+	if _, err := r.RunGitArgs(ctx, []string{"mv", "old.txt", "new.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "new.txt", "working\n")
+	if _, err := r.DiscardAll(ctx, "new.txt", "old.txt"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "old.txt"))
+	if err != nil || string(got) != "base\n" {
+		t.Fatalf("重命名源文件未恢复: %q %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "new.txt")); !os.IsNotExist(err) {
+		t.Fatalf("重命名目标文件未删除: %v", err)
+	}
+	st, err := r.Status(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Staged) != 0 || len(st.Unstaged) != 0 || len(st.Untracked) != 0 {
+		t.Fatalf("重命名相关改动未清除: %+v", st)
+	}
+}
+
+func TestDiscardAllRejectsEmptyPaths(t *testing.T) {
+	_, dir := newTestRepo(t)
+	commitFile(t, dir, "a.txt", "base\n", "base")
+	r := mustRepo(t, dir)
+	writeFile(t, dir, "a.txt", "changed\n")
+	if _, err := r.DiscardAll(context.Background()); err == nil {
+		t.Fatal("空路径不应触发全局丢弃")
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	if err != nil || string(got) != "changed\n" {
+		t.Fatalf("空路径调用修改了文件: %q %v", got, err)
+	}
+}
+
+func TestIgnorePreservesPathWhitespaceAndRejectsSymlink(t *testing.T) {
+	_, dir := newTestRepo(t)
+	r := mustRepo(t, dir)
+	ctx := context.Background()
+	writeFile(t, dir, " leading.txt", "ignored\n")
+	if _, err := r.Ignore(ctx, " leading.txt"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := r.Status(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range st.Untracked {
+		if change.Path == " leading.txt" {
+			t.Fatalf("前导空白路径未被忽略: %+v", st.Untracked)
+		}
+	}
+
+	outside := filepath.Join(t.TempDir(), "victim.txt")
+	if err := os.WriteFile(outside, []byte("do not change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, ".gitignore")); err != nil {
+		t.Skipf("当前平台无法创建符号链接: %v", err)
+	}
+	if _, err := r.Ignore(ctx, "other.txt"); err == nil {
+		t.Fatal("不应通过 .gitignore 符号链接写入仓库外文件")
+	}
+	got, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "do not change\n" {
+		t.Fatalf("仓库外文件被修改: %q", got)
+	}
+}
+
+func TestStashOperationsFollowHashAfterStackShift(t *testing.T) {
+	setup := func(t *testing.T) (*Repo, string, Stash, Stash) {
+		t.Helper()
+		_, dir := newTestRepo(t)
+		commitFile(t, dir, "a.txt", "base\n", "base")
+		r := mustRepo(t, dir)
+		ctx := context.Background()
+		writeFile(t, dir, "a.txt", "A\n")
+		if _, err := r.Stash(ctx, "A", false); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, dir, "a.txt", "B\n")
+		if _, err := r.Stash(ctx, "B", false); err != nil {
+			t.Fatal(err)
+		}
+		list, err := r.Stashes(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(list) != 2 || list[0].Hash == list[1].Hash {
+			t.Fatalf("stash 列表错误: %+v", list)
+		}
+		return r, dir, list[1], list[0]
+	}
+
+	t.Run("apply and diff", func(t *testing.T) {
+		r, dir, a, _ := setup(t)
+		ctx := context.Background()
+		diff, err := r.StashDiff(ctx, a.Hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(diff, "+A") {
+			t.Fatalf("stash diff 对象错误: %q", diff)
+		}
+		if _, err := r.StashApply(ctx, a.Hash); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "A\n" {
+			t.Fatalf("应用了错误 stash: %q", got)
+		}
+		list, _ := r.Stashes(ctx)
+		if len(list) != 2 {
+			t.Fatalf("apply 不应删除 stash: %+v", list)
+		}
+	})
+
+	t.Run("pop", func(t *testing.T) {
+		r, dir, a, b := setup(t)
+		ctx := context.Background()
+		if _, err := r.StashPop(ctx, a.Hash); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "A\n" {
+			t.Fatalf("pop 应用了错误 stash: %q", got)
+		}
+		list, _ := r.Stashes(ctx)
+		if len(list) != 1 || list[0].Hash != b.Hash {
+			t.Fatalf("pop 删除了错误 stash: %+v", list)
+		}
+	})
+
+	t.Run("drop and missing", func(t *testing.T) {
+		r, _, a, b := setup(t)
+		ctx := context.Background()
+		if _, err := r.StashDrop(ctx, a.Hash); err != nil {
+			t.Fatal(err)
+		}
+		list, _ := r.Stashes(ctx)
+		if len(list) != 1 || list[0].Hash != b.Hash {
+			t.Fatalf("drop 删除了错误 stash: %+v", list)
+		}
+		if _, err := r.StashDrop(ctx, strings.Repeat("0", 40)); err == nil {
+			t.Fatal("不存在的 stash 哈希应拒绝操作")
+		}
+	})
+}
+
+func TestRemoteBranchIdentityUsesLongestRemoteName(t *testing.T) {
+	_, dir := newTestRepo(t)
+	commitFile(t, dir, "a.txt", "base\n", "base")
+	remoteA := filepath.Join(t.TempDir(), "team.git")
+	remoteB := filepath.Join(t.TempDir(), "team-origin.git")
+	runGit(t, dir, "init", "--bare", remoteA)
+	runGit(t, dir, "init", "--bare", remoteB)
+	runGit(t, dir, "remote", "add", "team", remoteA)
+	runGit(t, dir, "remote", "add", "team/origin", remoteB)
+	runGit(t, dir, "push", "team", "main:refs/heads/origin/main")
+	runGit(t, dir, "push", "team/origin", "main:refs/heads/main")
+	runGit(t, dir, "push", "team/origin", "main:refs/heads/feature")
+	runGit(t, dir, "fetch", "team")
+	runGit(t, dir, "fetch", "team/origin")
+
+	r := mustRepo(t, dir)
+	ctx := context.Background()
+	if _, err := r.DeleteRemoteBranch(ctx, "refs/remotes/team/origin/main"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.RunGitArgs(ctx, []string{"ls-remote", "team/origin", "refs/heads/main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("目标远端分支未删除: %q", out)
+	}
+	out, err = r.RunGitArgs(ctx, []string{"ls-remote", "team", "refs/heads/origin/main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) == "" {
+		t.Fatal("误删了另一个远端的同名分支")
+	}
+	if _, err := r.CheckoutRemoteBranch(ctx, "team/origin/feature"); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.CurrentBranch(ctx); got != "feature" {
+		t.Fatalf("检出分支 = %q，期望 feature", got)
+	}
+	refs, err := r.Refs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range refs {
+		if ref.Kind == RefLocal && ref.Name == "feature" {
+			if ref.Upstream != "team/origin/feature" {
+				t.Fatalf("跟踪上游 = %q", ref.Upstream)
+			}
+			return
+		}
+	}
+	t.Fatal("未找到新检出的本地分支")
+}
 
 // TestCompareBranches 验证分支对比的提交范围、差异统计与边界。
 func TestCompareBranches(t *testing.T) {
@@ -226,4 +602,48 @@ func TestRenameBranchUpstream(t *testing.T) {
 			t.Fatalf("跨名上游 = %q，期望 origin/main", up)
 		}
 	})
+}
+
+func TestDiscardAllOnlyUntrackedPath(t *testing.T) {
+	_, dir := newTestRepo(t)
+	commitFile(t, dir, "base.txt", "base\n", "base")
+	r := mustRepo(t, dir)
+	ctx := context.Background()
+	writeFile(t, dir, "only/untracked.txt", "u\n")
+	if _, err := r.DiscardAll(ctx, "only/untracked.txt"); err != nil {
+		t.Fatalf("DiscardAll only-untracked: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "only/untracked.txt")); !os.IsNotExist(err) {
+		t.Fatalf("未跟踪文件未删除: %v", err)
+	}
+	st, err := r.Status(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Staged)+len(st.Unstaged)+len(st.Untracked) != 0 {
+		t.Fatalf("仍有改动: %+v", st)
+	}
+}
+
+func TestDiscardAllBeforeFirstCommit(t *testing.T) {
+	_, dir := newTestRepo(t)
+	r := mustRepo(t, dir)
+	ctx := context.Background()
+	writeFile(t, dir, "first.txt", "new\n")
+	if _, err := r.Stage(ctx, "first.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.DiscardAll(ctx, "first.txt"); err != nil {
+		t.Fatalf("DiscardAll 无 HEAD: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "first.txt")); !os.IsNotExist(err) {
+		t.Fatalf("首个提交前文件未删除: %v", err)
+	}
+	st, err := r.Status(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Staged)+len(st.Unstaged)+len(st.Untracked) != 0 {
+		t.Fatalf("仍有改动: %+v", st)
+	}
 }
