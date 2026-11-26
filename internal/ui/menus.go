@@ -764,12 +764,24 @@ func (a *App) openProjectMenu(focus int) {
 // openWorktreeMenu 是项目区 worktree 子行的右键菜单。
 func (a *App) openWorktreeMenu(projectPath string, wt git.Worktree) {
 	choices := []choice{}
-	if wt.Path != a.currentPath {
+	invalid := worktreeInvalid(wt)
+	if wt.Path != a.currentPath && !invalid {
 		choices = append(choices, choice{label: i18n.S("切换到此 worktree", "switch to this worktree"), action: func(a *App) tea.Cmd {
 			return a.switchToWorktree(projectPath, wt.Path)
 		}})
 	}
-	if p := a.projectByPath(projectPath); p != nil {
+	if invalid {
+		choices = append(choices, choice{label: i18n.S("清理失效 worktree 记录", "prune invalid worktree"), action: func(a *App) tea.Cmd {
+			return a.runOp("worktree prune", func(ctx context.Context) (string, error) {
+				baseSvc, err := a.openRepo(projectPath)
+				if err != nil {
+					return "", err
+				}
+				return baseSvc.PruneWorktrees(ctx)
+			})
+		}})
+	}
+	if p := a.projectByPath(projectPath); p != nil && !invalid {
 		p := *p
 		choices = append(choices,
 			choice{label: i18n.S("新建 worktree…", "new worktree..."), action: func(a *App) tea.Cmd {
@@ -778,7 +790,7 @@ func (a *App) openWorktreeMenu(projectPath string, wt git.Worktree) {
 			}},
 		)
 	}
-	if !wt.Main && wt.Path != a.currentPath {
+	if !wt.Main && wt.Path != a.currentPath && !invalid {
 		path := wt.Path
 		choices = append(choices, choice{label: i18n.S("移除 worktree（危险）", "remove worktree (dangerous)"), action: func(a *App) tea.Cmd {
 			a.confirm(i18n.S("移除 worktree "+filepath.Base(path), "remove worktree "+filepath.Base(path)),
