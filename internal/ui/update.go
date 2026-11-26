@@ -25,9 +25,32 @@ type progressMsg struct {
 	line string
 }
 
-// Update 处理消息。
+// toastExpireMsg 在提示显示 1 秒后触发；只清除对应世代的消息。
+type toastExpireMsg struct{ gen int }
+
+func toastExpireCmd(gen int) tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return toastExpireMsg{gen: gen} })
+}
+
+// Update 包装 update，在提示变化时追加自动消失定时器。
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	oldToast, oldGen := a.toast, a.toastGen
+	model, cmd := a.update(msg)
+	if a.toast != "" && (a.toast != oldToast || a.toastGen != oldGen) {
+		cmd = tea.Batch(cmd, toastExpireCmd(a.toastGen))
+	}
+	return model, cmd
+}
+
+// update 处理消息。
+func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
+	case toastExpireMsg:
+		if m.gen == a.toastGen {
+			a.toast = ""
+			a.toastErr = false
+		}
+		return a, nil
 	case tea.WindowSizeMsg:
 		a.width, a.height = m.Width, m.Height
 		a.clampSelection()
@@ -2081,8 +2104,8 @@ func (a *App) choiceMenuBox() ([]string, int, int) {
 	} else {
 		title = truncate(title, w-4)
 	}
-	// 菜单边框与文字显式着色，避免继承下方主界面行的文字颜色。
-	borderStyle := lipgloss.NewStyle().Foreground(colorBorder)
+	// 菜单边框使用当前激活区域的边框色；源区域同时让出激活色。
+	borderStyle := activeBorderStyle()
 	rowStyle := lipgloss.NewStyle().Foreground(colorFg)
 	// 标题右侧用横线填充（而非空格），与区域边框的 ─── 样式一致。
 	fillTitle := w - 4 - strWidth(title)
@@ -2101,12 +2124,13 @@ func (a *App) choiceMenuBox() ([]string, int, int) {
 		if c.desc != "" && w >= 56 {
 			label += "  " + c.desc
 		}
-		row := "│ " + padRight(truncate(label, w-2), w-1) + "│"
+		inner := " " + padRight(truncate(label, w-2), w-1)
 		if i == m.sel {
-			row = styleSel.Render(row)
+			inner = styleSel.Render(inner)
 		} else {
-			row = rowStyle.Render(row)
+			inner = rowStyle.Render(inner)
 		}
+		row := borderStyle.Render("│") + inner + borderStyle.Render("│")
 		lines = append(lines, row)
 	}
 	// 条目超过可视区时在右边框绘制滚动条
