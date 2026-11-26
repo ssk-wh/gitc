@@ -320,6 +320,7 @@ type App struct {
 	projectBranch      map[string]string
 	projectCache       map[string]*projectCache
 	autoTicks          int
+	verifyAfterRestore bool
 	worktrees          map[string][]git.Worktree
 	projectCollapsed   map[string]bool
 	currentProjectPath string

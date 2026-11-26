@@ -108,7 +108,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.onDirtyRow() {
 			extra = a.loadWorkingFiles()
 		}
-		if m.auto && !a.loadingLog {
+		checkChanges := m.auto || a.verifyAfterRestore
+		if checkChanges && !a.loadingLog {
+			a.verifyAfterRestore = false
 			if m.status.OID != oldOID || m.status.Branch != oldBranch || !sameRefs(oldRefs, m.refs) {
 				extra = tea.Batch(extra, a.reloadLogCmdPreserve())
 			}
@@ -248,12 +250,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.chooseProjectDir(m.path)
 		}
 		return a, nil
-
-	case switchReloadMsg:
-		if strings.TrimSpace(m.path) != a.currentPath {
-			return a, nil
-		}
-		return a, a.reloadLogCmdPreserve()
 
 	case worktreesMsg:
 		for p, list := range m.list {

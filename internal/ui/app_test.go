@@ -2611,10 +2611,22 @@ func TestProjectCacheRestore(t *testing.T) {
 	if a.projectCache[cleanProjectPath(dirA)] == nil {
 		t.Fatal("项目缓存未保存")
 	}
-	// 后台刷新消息应保留当前画面直到首批数据到达
-	a.Update(switchReloadMsg{path: a.currentPath})
-	if len(a.commits) == 0 || !a.logPreserve {
-		t.Fatalf("后台刷新过早清空缓存: commits=%d preserve=%v", len(a.commits), a.logPreserve)
+	// 缓存一致时，校验刷新不应重载提交历史
+	a.verifyAfterRestore = true
+	a.Update(refreshMsg{gen: a.refreshGen, quick: true, status: a.status, refs: a.refs})
+	if a.logPreserve {
+		t.Fatal("缓存未变化时不应重载提交历史")
+	}
+	if a.verifyAfterRestore {
+		t.Fatal("校验标记未清除")
+	}
+	// 缓存过期时应后台重载
+	a.verifyAfterRestore = true
+	changed := append([]git.Ref(nil), a.refs...)
+	changed[0].Target = "cccccccccccc3333"
+	a.Update(refreshMsg{gen: a.refreshGen, quick: true, status: a.status, refs: changed})
+	if !a.logPreserve {
+		t.Fatal("缓存过期时应重载提交历史")
 	}
 }
 
@@ -3100,5 +3112,30 @@ func TestInvalidWorktreeMenu(t *testing.T) {
 	}
 	if !hasPrune || hasNew {
 		t.Fatalf("失效 worktree 菜单错误: %+v", a.modal.choices)
+	}
+}
+
+// TestProjectBlankClickNoReload 点击项目区空白行不应触发提交列表刷新。
+func TestProjectBlankClickNoReload(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root, wt := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.currentPath = cleanProjectPath(wt)
+	a.currentProjectPath = cleanProjectPath(root)
+	a.worktrees[cleanProjectPath(root)] = []git.Worktree{
+		{Path: cleanProjectPath(root), Branch: "main", Main: true},
+		{Path: cleanProjectPath(wt), Branch: "wt-branch"},
+	}
+	a.projectH = 7 // 强制留出空白行
+	a.pane = PaneProjects
+	rows := len(a.projectRows())
+	if a.projectViewHeight() <= rows {
+		t.Fatalf("没有空白行: view=%d rows=%d", a.projectViewHeight(), rows)
+	}
+	blankY := 1 + rows // 内容区第 rows 行（0-based）即空白
+	gen := a.logGen
+	_, cmd := a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: blankY})
+	if cmd != nil || a.logGen != gen {
+		t.Fatalf("空白点击触发了刷新: cmd=%v logGen=%d->%d", cmd, gen, a.logGen)
 	}
 }

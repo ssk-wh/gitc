@@ -674,9 +674,6 @@ func (a *App) restoreProjectCache(root string) (tea.Cmd, bool) {
 	return cmd, true
 }
 
-// switchReloadMsg 在缓存首帧渲染后触发后台重新加载。
-type switchReloadMsg struct{ path string }
-
 // switchToWorktree 切换当前仓库上下文到某个 worktree，不改变项目列表。
 func (a *App) switchToWorktree(projectPath, wtPath string) tea.Cmd {
 	if wtPath == "" || wtPath == a.currentPath {
@@ -715,10 +712,8 @@ func (a *App) switchToWorktree(projectPath, wtPath string) tea.Cmd {
 	a.ensureProjectVisible()
 	base := a.loadWorktreesCmd()
 	if restored {
-		reload := tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg {
-			return switchReloadMsg{path: root}
-		})
-		return tea.Batch(a.refreshCmd(true), reload, fileCmd, base)
+		a.verifyAfterRestore = true
+		return tea.Batch(a.refreshCmd(true), fileCmd, base)
 	}
 	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), base)
 }
@@ -780,11 +775,9 @@ func (a *App) switchProject(idx int) tea.Cmd {
 	a.ensureProjectVisible()
 	a.saveConfig()
 	if restored {
-		// 先用缓存渲染，再延迟后台刷新，避免首帧空白。
-		reload := tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg {
-			return switchReloadMsg{path: root}
-		})
-		return tea.Batch(a.refreshCmd(true), reload, fileCmd, a.loadProjectBranchesCmd(), a.loadWorktreesCmd())
+		// 先用缓存渲染，由随后的一次刷新校验是否有外部变化。
+		a.verifyAfterRestore = true
+		return tea.Batch(a.refreshCmd(true), fileCmd, a.loadProjectBranchesCmd(), a.loadWorktreesCmd())
 	}
 	a.sideSelKey = "p:" + root
 	a.rebuildSidebar()
