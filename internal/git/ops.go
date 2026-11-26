@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -61,8 +62,26 @@ func (r *Repo) Checkout(ctx context.Context, ref string) (string, error) {
 }
 
 // CheckoutRemoteBranch 以远端分支为跟踪目标创建并检出本地分支。
-func (r *Repo) CheckoutRemoteBranch(ctx context.Context, remoteRef, local string) (string, error) {
-	return r.run(ctx, false, "checkout", "-b", local, "--track", remoteRef)
+func (r *Repo) CheckoutRemoteBranch(ctx context.Context, remoteRef string) (string, error) {
+	remote, branch, err := r.resolveRemoteBranch(ctx, remoteRef)
+	if err != nil {
+		return "", err
+	}
+	if _, err := r.run(ctx, true, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		return r.run(ctx, false, "checkout", branch)
+	}
+	fullRef := "refs/remotes/" + remote + "/" + branch
+	out, err := r.run(ctx, false, "checkout", "-b", branch, "--no-track", fullRef)
+	if err != nil {
+		return out, err
+	}
+	if _, err := r.run(ctx, false, "config", "branch."+branch+".remote", remote); err != nil {
+		return out, err
+	}
+	if _, err := r.run(ctx, false, "config", "branch."+branch+".merge", "refs/heads/"+branch); err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
 // CreateBranch 基于 startPoint 创建分支；checkout 为 true 时同时切换。
@@ -90,12 +109,21 @@ func (r *Repo) branchUpstream(ctx context.Context, branch string) string {
 	return strings.TrimSpace(out)
 }
 
-// splitUpstream 把 origin/main 拆成远端名与分支名。
-func splitUpstream(upstream string) (remote, branch string) {
-	if i := strings.IndexByte(upstream, '/'); i > 0 {
-		return upstream[:i], upstream[i+1:]
+func (r *Repo) resolveRemoteBranch(ctx context.Context, ref string) (remote, branch string, err error) {
+	ref = strings.TrimPrefix(ref, "refs/remotes/")
+	out, err := r.run(ctx, true, "remote")
+	if err != nil {
+		return "", "", err
 	}
-	return "", upstream
+	remotes := strings.Fields(out)
+	sort.Slice(remotes, func(i, j int) bool { return len(remotes[i]) > len(remotes[j]) })
+	for _, name := range remotes {
+		prefix := name + "/"
+		if strings.HasPrefix(ref, prefix) && len(ref) > len(prefix) {
+			return name, strings.TrimPrefix(ref, prefix), nil
+		}
+	}
+	return "", "", fmt.Errorf("无法识别远端分支 %q，请检查 git remote 配置", ref)
 }
 
 // RenameBranch 重命名分支，并处理同名上游：
@@ -126,8 +154,8 @@ func (r *Repo) RenameBranch(ctx context.Context, oldName, newName string) (strin
 	if err != nil || old == "" || oldUpstream == "" {
 		return out, err
 	}
-	remote, upstreamBranch := splitUpstream(oldUpstream)
-	if remote == "" || upstreamBranch != old {
+	remote, upstreamBranch, err := r.resolveRemoteBranch(ctx, oldUpstream)
+	if err != nil || upstreamBranch != old {
 		// 上游跟踪的是别的分支名，保持原样。
 		return out, nil
 	}
@@ -167,7 +195,11 @@ func (r *Repo) DeleteBranch(ctx context.Context, name string, force bool) (strin
 }
 
 // DeleteRemoteBranch 删除远端分支。
-func (r *Repo) DeleteRemoteBranch(ctx context.Context, remote, branch string) (string, error) {
+func (r *Repo) DeleteRemoteBranch(ctx context.Context, remoteRef string) (string, error) {
+	remote, branch, err := r.resolveRemoteBranch(ctx, remoteRef)
+	if err != nil {
+		return "", err
+	}
 	return r.run(ctx, false, "push", remote, "--delete", branch)
 }
 
@@ -223,10 +255,22 @@ func (r *Repo) PushTag(ctx context.Context, remote, name string, progress func(s
 	return r.runProgress(ctx, []string{"push", "--progress", remote, "refs/tags/" + name}, progress)
 }
 
+func literalPathspec(path string) string {
+	return ":(literal)" + path
+}
+
+func literalPathspecs(paths []string) []string {
+	out := make([]string, len(paths))
+	for i, path := range paths {
+		out[i] = literalPathspec(path)
+	}
+	return out
+}
+
 // Stage 暂存指定路径。
 func (r *Repo) Stage(ctx context.Context, paths ...string) (string, error) {
 	args := []string{"add", "--"}
-	args = append(args, paths...)
+	args = append(args, literalPathspecs(paths)...)
 	return r.run(ctx, false, args...)
 }
 
@@ -238,14 +282,14 @@ func (r *Repo) StageAll(ctx context.Context) (string, error) {
 // Unstage 取消暂存指定路径。
 func (r *Repo) Unstage(ctx context.Context, paths ...string) (string, error) {
 	args := []string{"reset", "-q", "HEAD", "--"}
-	args = append(args, paths...)
+	args = append(args, literalPathspecs(paths)...)
 	out, err := r.run(ctx, false, args...)
 	if err == nil {
 		return out, nil
 	}
 	// 尚无提交时 HEAD 不存在，改用 rm --cached。
 	args = []string{"rm", "--cached", "-r", "-q", "--"}
-	args = append(args, paths...)
+	args = append(args, literalPathspecs(paths)...)
 	return r.run(ctx, false, args...)
 }
 
@@ -262,12 +306,74 @@ func (r *Repo) UnstageAll(ctx context.Context) (string, error) {
 func (r *Repo) Discard(ctx context.Context, untracked bool, paths ...string) (string, error) {
 	if untracked {
 		args := []string{"clean", "-f", "-d", "--"}
-		args = append(args, paths...)
+		args = append(args, literalPathspecs(paths)...)
 		return r.run(ctx, false, args...)
 	}
 	args := []string{"checkout", "--"}
-	args = append(args, paths...)
+	args = append(args, literalPathspecs(paths)...)
 	return r.run(ctx, false, args...)
+}
+
+// DiscardAll 清除指定路径的暂存、工作区与未跟踪改动。
+func (r *Repo) DiscardAll(ctx context.Context, paths ...string) (string, error) {
+	if len(paths) == 0 {
+		return "", errors.New("丢弃路径不能为空")
+	}
+	for _, path := range paths {
+		if path == "" {
+			return "", errors.New("丢弃路径不能为空")
+		}
+	}
+	specs := literalPathspecs(paths)
+	var out string
+	var err error
+	if _, headErr := r.run(ctx, true, "rev-parse", "--verify", "HEAD"); headErr != nil {
+		// 尚无首个提交时 restore 没有 HEAD 可用，先取消暂存再清理。
+		out, err = r.run(ctx, false, append([]string{"rm", "--cached", "-r", "-q", "--ignore-unmatch", "--"}, specs...)...)
+		if err != nil {
+			return out, err
+		}
+	} else {
+		restoreSpecs, err := r.restorePathspecs(ctx, specs)
+		if err != nil {
+			return "", err
+		}
+		if len(restoreSpecs) > 0 {
+			out, err = r.run(ctx, false, append([]string{"restore", "--source=HEAD", "--staged", "--worktree", "--"}, restoreSpecs...)...)
+			if err != nil {
+				return out, err
+			}
+		}
+	}
+	cleanOut, err := r.run(ctx, false, append([]string{"clean", "-f", "-d", "--"}, specs...)...)
+	return out + cleanOut, err
+}
+
+// restorePathspecs 返回同时存在于 HEAD 或 index 的路径，避免仅未跟踪路径导致
+// git restore 报 pathspec 不匹配而中断后续 clean。
+func (r *Repo) restorePathspecs(ctx context.Context, specs []string) ([]string, error) {
+	seen := map[string]bool{}
+	add := func(out string) {
+		for _, path := range strings.Split(out, string(rune(0))) {
+			if path != "" {
+				seen[path] = true
+			}
+		}
+	}
+	if out, err := r.run(ctx, true, append([]string{"ls-tree", "-r", "--name-only", "-z", "HEAD", "--"}, specs...)...); err == nil {
+		add(out)
+	}
+	out, err := r.run(ctx, true, append([]string{"ls-files", "-z", "--"}, specs...)...)
+	if err != nil {
+		return nil, err
+	}
+	add(out)
+	restore := make([]string, 0, len(seen))
+	for path := range seen {
+		restore = append(restore, literalPathspec(path))
+	}
+	sort.Strings(restore)
+	return restore, nil
 }
 
 // Commit 提交暂存内容，message 通过 stdin 传递；amend 为 true 时修订最近提交。
@@ -287,7 +393,7 @@ func (r *Repo) Commit(ctx context.Context, message string, amend bool) (string, 
 
 // Ignore 把一个未跟踪路径加入仓库根目录的 .gitignore。
 func (r *Repo) Ignore(ctx context.Context, path string) (string, error) {
-	rel := filepath.ToSlash(strings.TrimSpace(path))
+	rel := filepath.ToSlash(path)
 	trailing := ""
 	if strings.HasSuffix(rel, "/") {
 		rel = strings.TrimSuffix(rel, "/")
@@ -309,12 +415,19 @@ func (r *Repo) Ignore(ctx context.Context, path string) (string, error) {
 	}
 	pattern := "/" + escape(rel) + trailing
 	file := filepath.Join(r.Root, ".gitignore")
+	info, err := os.Lstat(file)
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	if err == nil && !info.Mode().IsRegular() {
+		return "", errors.New(".gitignore 必须是普通文件，不能是符号链接或目录")
+	}
 	data, err := os.ReadFile(file)
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
 	for _, line := range strings.Split(string(data), string(rune(10))) {
-		if strings.TrimSpace(line) == pattern {
+		if strings.TrimSuffix(line, "\r") == pattern {
 			return "已在 .gitignore 中: " + pattern, nil
 		}
 	}
@@ -323,7 +436,28 @@ func (r *Repo) Ignore(ctx context.Context, path string) (string, error) {
 		content += string(rune(10))
 	}
 	content += pattern + string(rune(10))
-	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+	tmp, err := os.CreateTemp(r.Root, ".gitignore-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	mode := os.FileMode(0o644)
+	if info != nil {
+		mode = info.Mode().Perm()
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if _, err := tmp.WriteString(content); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmpPath, file); err != nil {
 		return "", err
 	}
 	return "已添加到 .gitignore: " + pattern, nil
@@ -356,7 +490,7 @@ func (r *Repo) Worktrees(ctx context.Context) ([]Worktree, error) {
 		}
 	}
 	for _, line := range strings.Split(out, string(rune(10))) {
-		line = strings.TrimSpace(line)
+		line = strings.TrimSuffix(line, "\r")
 		if line == "" {
 			flush()
 			continue
@@ -568,24 +702,52 @@ func (r *Repo) Stash(ctx context.Context, message string, includeUntracked bool)
 	return r.run(ctx, false, args...)
 }
 
+func (r *Repo) stashSelector(ctx context.Context, hash string) (string, error) {
+	stashes, err := r.Stashes(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, st := range stashes {
+		if st.Hash == hash {
+			return st.Selector, nil
+		}
+	}
+	return "", errors.New("stash 已变化或不存在，请刷新后重试")
+}
+
 // StashApply 应用 stash 但保留记录。
-func (r *Repo) StashApply(ctx context.Context, index int) (string, error) {
-	return r.run(ctx, false, "stash", "apply", fmt.Sprintf("stash@{%d}", index))
+func (r *Repo) StashApply(ctx context.Context, hash string) (string, error) {
+	return r.run(ctx, false, "stash", "apply", hash)
 }
 
 // StashPop 应用并删除 stash 记录。
-func (r *Repo) StashPop(ctx context.Context, index int) (string, error) {
-	return r.run(ctx, false, "stash", "pop", fmt.Sprintf("stash@{%d}", index))
+func (r *Repo) StashPop(ctx context.Context, hash string) (string, error) {
+	out, err := r.run(ctx, false, "stash", "apply", hash)
+	if err != nil {
+		return out, err
+	}
+	selector, err := r.stashSelector(ctx, hash)
+	if err != nil {
+		return out, fmt.Errorf("stash 已应用，但记录已变化，未删除: %w", err)
+	}
+	if _, err := r.run(ctx, false, "stash", "drop", selector); err != nil {
+		return out, fmt.Errorf("stash 已应用，但删除失败: %w", err)
+	}
+	return out, nil
 }
 
 // StashDrop 删除 stash 记录。
-func (r *Repo) StashDrop(ctx context.Context, index int) (string, error) {
-	return r.run(ctx, false, "stash", "drop", fmt.Sprintf("stash@{%d}", index))
+func (r *Repo) StashDrop(ctx context.Context, hash string) (string, error) {
+	selector, err := r.stashSelector(ctx, hash)
+	if err != nil {
+		return "", err
+	}
+	return r.run(ctx, false, "stash", "drop", selector)
 }
 
 // StashDiff 查看 stash 内容。
-func (r *Repo) StashDiff(ctx context.Context, index int) (string, error) {
-	return r.run(ctx, true, "stash", "show", "-p", "--no-color", fmt.Sprintf("stash@{%d}", index))
+func (r *Repo) StashDiff(ctx context.Context, hash string) (string, error) {
+	return r.run(ctx, true, "stash", "show", "-p", "--no-color", hash)
 }
 
 // Fetch 抓取全部远端；prune 对应 --prune。

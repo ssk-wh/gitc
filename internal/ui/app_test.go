@@ -116,7 +116,7 @@ func (f *fakeSvc) WorkingDiff(ctx context.Context, path string, staged, untracke
 	return "diff --git a/" + path + " b/" + path + "\n+x\n", nil
 }
 
-func (f *fakeSvc) StashDiff(ctx context.Context, index int) (string, error) {
+func (f *fakeSvc) StashDiff(ctx context.Context, hash string) (string, error) {
 	return "diff --git a/x b/x\n+z\n", nil
 }
 
@@ -136,6 +136,9 @@ func (f *fakeSvc) UnstageAll(context.Context) (string, error) { return f.record(
 func (f *fakeSvc) Discard(ctx context.Context, untracked bool, paths ...string) (string, error) {
 	return f.record("discard:" + strings.Join(paths, ","))
 }
+func (f *fakeSvc) DiscardAll(ctx context.Context, paths ...string) (string, error) {
+	return f.record("discard-all:" + strings.Join(paths, ","))
+}
 func (f *fakeSvc) Commit(ctx context.Context, msg string, amend bool) (string, error) {
 	if amend {
 		return f.record("amend")
@@ -145,7 +148,7 @@ func (f *fakeSvc) Commit(ctx context.Context, msg string, amend bool) (string, e
 func (f *fakeSvc) Checkout(ctx context.Context, ref string) (string, error) {
 	return f.record("checkout:" + ref)
 }
-func (f *fakeSvc) CheckoutRemoteBranch(ctx context.Context, remoteRef, local string) (string, error) {
+func (f *fakeSvc) CheckoutRemoteBranch(ctx context.Context, remoteRef string) (string, error) {
 	return f.record("checkout-remote:" + remoteRef)
 }
 func (f *fakeSvc) CreateBranch(ctx context.Context, name, start string, checkout bool) (string, error) {
@@ -157,8 +160,8 @@ func (f *fakeSvc) RenameBranch(ctx context.Context, oldName, newName string) (st
 func (f *fakeSvc) DeleteBranch(ctx context.Context, name string, force bool) (string, error) {
 	return f.record("delete-branch:" + name)
 }
-func (f *fakeSvc) DeleteRemoteBranch(ctx context.Context, remote, branch string) (string, error) {
-	return f.record("delete-remote:" + remote + "/" + branch)
+func (f *fakeSvc) DeleteRemoteBranch(ctx context.Context, remoteRef string) (string, error) {
+	return f.record("delete-remote:" + remoteRef)
 }
 func (f *fakeSvc) Merge(ctx context.Context, ref string) (string, error) {
 	return f.record("merge:" + ref)
@@ -187,14 +190,14 @@ func (f *fakeSvc) PushTag(ctx context.Context, remote, name string, progress fun
 func (f *fakeSvc) Stash(ctx context.Context, msg string, untracked bool) (string, error) {
 	return f.record("stash")
 }
-func (f *fakeSvc) StashApply(ctx context.Context, index int) (string, error) {
-	return f.record("stash-apply")
+func (f *fakeSvc) StashApply(ctx context.Context, hash string) (string, error) {
+	return f.record("stash-apply:" + hash)
 }
-func (f *fakeSvc) StashPop(ctx context.Context, index int) (string, error) {
-	return f.record("stash-pop")
+func (f *fakeSvc) StashPop(ctx context.Context, hash string) (string, error) {
+	return f.record("stash-pop:" + hash)
 }
-func (f *fakeSvc) StashDrop(ctx context.Context, index int) (string, error) {
-	return f.record("stash-drop")
+func (f *fakeSvc) StashDrop(ctx context.Context, hash string) (string, error) {
+	return f.record("stash-drop:" + hash)
 }
 func (f *fakeSvc) Fetch(ctx context.Context, prune bool, progress func(string)) (string, error) {
 	return f.record("fetch")
@@ -343,7 +346,7 @@ func TestNavigationAndDetail(t *testing.T) {
 	}
 	// 等待详情加载：执行 pending cmd 无法拿到，这里直接构造 detailMsg
 	d := git.CommitDetail{Hash: "aaaaaaaaaaaa1111", Author: "张三", Subject: "修复切换音频崩溃", Body: "详情正文", Files: []git.CommitFile{{Status: "M", Path: "a.txt"}}}
-	a.Update(detailMsg{sha: "aaaaaaaaaaaa1111", kind: "commit", title: "修复切换音频崩溃", detail: d, diff: "@@ -1 +1 @@\n-old\n+new"})
+	a.Update(detailMsg{gen: a.detailGen, key: a.detailKey, sha: "aaaaaaaaaaaa1111", kind: "commit", title: "修复切换音频崩溃", detail: d, diff: "@@ -1 +1 @@\n-old\n+new"})
 	v := plainView(a)
 	for _, want := range []string{"详情正文", "a.txt", "+new", "-old"} {
 		if !strings.Contains(v, want) {
@@ -912,7 +915,7 @@ func TestBranchFilterMenu(t *testing.T) {
 	}
 	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	pump(t, a, cmd)
-	if a.branchFilter != "feature/x" {
+	if a.branchFilter != "refs/heads/feature/x" {
 		t.Errorf("分支筛选 = %q", a.branchFilter)
 	}
 }
@@ -2575,7 +2578,9 @@ func TestLongBranchBadgeVisible(t *testing.T) {
 // TestCheckoutWorktreeHint 分支被其他工作树占用时给出明确提示。
 func TestCheckoutWorktreeHint(t *testing.T) {
 	a, _ := newFakeApp(t)
-	a.Update(opDoneMsg{name: "checkout fix/x", err: errors.New("fatal: 'fix/x' is already checked out at '/tmp/wt'")})
+	a.busy = true
+	a.opID = 1
+	a.Update(opDoneMsg{id: 1, name: "checkout fix/x", err: errors.New("fatal: 'fix/x' is already checked out at '/tmp/wt'")})
 	if !strings.Contains(a.toast, "工作树") && !strings.Contains(a.toast, "worktree") {
 		t.Fatalf("缺少工作树提示: %q", a.toast)
 	}

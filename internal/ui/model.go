@@ -123,6 +123,9 @@ type detailModel struct {
 	lines   []string
 	offset  int
 	err     string
+	entry   fileEntry
+	working bool
+	retry   string
 }
 
 // fileEntry 是文件区的一行（提交文件或工作区文件）。
@@ -272,6 +275,7 @@ type App struct {
 	modalPress       *modal
 
 	busy       bool
+	opID       int
 	taskName   string
 	spinner    int
 	ticking    bool
@@ -281,6 +285,8 @@ type App struct {
 	refreshGen int
 	logGen     int
 	searchGen  int
+	detailGen  int
+	detailKey  string
 	stream     *logStream
 
 	toast    string
@@ -762,9 +768,13 @@ func (a *App) selectedFile() *fileEntry {
 
 // setFiles 更新文件列表并重建树形视图。
 func (a *App) setFiles(files []fileEntry) {
+	selPath, off := "", a.fileOff
+	if n := a.selectedFileNode(); n != nil {
+		selPath = n.path
+	}
 	a.files = files
 	a.rebuildFileTree()
-	a.restoreFileSelection()
+	a.restoreFileSelectionAt(selPath, off)
 }
 
 // buildFileTree 依据文件路径构建目录树（同名文件合并条目）并按展开状态生成可见行。
@@ -1020,19 +1030,44 @@ func (a *App) toggleChangeDir(n *fileNode) {
 	a.ensureChangeVisible()
 }
 
-// restoreFileSelection 尽量保持选中节点，否则选中首个可见文件/首行。
+// restoreFileSelection 按当前选中节点恢复位置。
 func (a *App) restoreFileSelection() {
+	selPath, off := "", a.fileOff
+	if n := a.selectedFileNode(); n != nil {
+		selPath = n.path
+	}
+	a.restoreFileSelectionAt(selPath, off)
+}
+
+func (a *App) restoreFileSelectionAt(selPath string, off int) {
 	if len(a.fileRows) == 0 {
 		a.fileSel, a.fileOff = 0, 0
 		return
 	}
 	a.fileSel = 0
-	for i, r := range a.fileRows {
-		if !r.node.dir {
-			a.fileSel = i
-			break
+	found := false
+	if selPath != "" {
+		for i, r := range a.fileRows {
+			if r.node.path == selPath {
+				a.fileSel = i
+				found = true
+				break
+			}
 		}
 	}
+	if !found {
+		for i, r := range a.fileRows {
+			if !r.node.dir {
+				a.fileSel = i
+				break
+			}
+		}
+	}
+	maxOff := len(a.fileRows) - a.fileViewHeight()
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	a.fileOff = maxInt(0, minInt(off, maxOff))
 	a.ensureFileVisible()
 }
 
@@ -1655,7 +1690,7 @@ func (a *App) logLine(s string) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		a.logs = append(a.logs, line)
+		a.logs = append(a.logs, sanitize.Secrets(sanitize.Text(line)))
 	}
 	if len(a.logs) > 500 {
 		a.logs = a.logs[len(a.logs)-500:]
@@ -1664,7 +1699,7 @@ func (a *App) logLine(s string) {
 
 // setToast 设置状态栏消息。
 func (a *App) setToast(s string, isErr bool) {
-	a.toast = sanitize.Line(s)
+	a.toast = sanitize.Secrets(sanitize.Line(s))
 	a.toastErr = isErr
 }
 

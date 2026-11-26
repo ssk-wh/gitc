@@ -212,7 +212,6 @@ func TestLatestTagFromHTML(t *testing.T) {
 	}
 }
 
-
 func TestLatestTagFromAtom(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

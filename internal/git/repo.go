@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ssk-wh/gitc/internal/sanitize"
 )
 
 // MinVersion 是支持的最低 git 版本。
@@ -34,11 +36,11 @@ func (r *Repo) notify(args []string) {
 	if r.OnCommand == nil {
 		return
 	}
-	line := "git " + strings.Join(args, " ")
+	line := "git " + sanitize.Command(args)
 	r.OnCommand(line)
 }
 
-// GitError 保留命令与输出，便于 UI 原样展示。
+// GitError 保留命令与输出，并在展示时脱敏。
 type GitError struct {
 	Args   []string
 	Output string
@@ -46,11 +48,13 @@ type GitError struct {
 }
 
 func (e *GitError) Error() string {
-	out := strings.TrimSpace(e.Output)
+	command := "git " + sanitize.Command(e.Args)
+	cause := sanitize.Line(fmt.Sprint(e.Err))
+	out := strings.TrimSpace(sanitize.Secrets(sanitize.Text(e.Output)))
 	if out == "" {
-		return fmt.Sprintf("git %s: %v", strings.Join(e.Args, " "), e.Err)
+		return fmt.Sprintf("%s: %s", command, cause)
 	}
-	return fmt.Sprintf("git %s: %v\n%s", strings.Join(e.Args, " "), e.Err, out)
+	return fmt.Sprintf("%s: %s\n%s", command, cause, out)
 }
 
 func (e *GitError) Unwrap() error { return e.Err }
@@ -80,13 +84,16 @@ func Open(dir string) (*Repo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("当前目录不是 git 仓库: %w", err)
 	}
-	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 	if len(lines) < 3 {
 		return nil, errors.New("无法解析仓库路径")
 	}
-	r.Root = strings.TrimSpace(lines[0])
-	r.GitDir = resolvePath(r.Root, strings.TrimSpace(lines[1]))
-	r.CommonDir = resolvePath(r.Root, strings.TrimSpace(lines[2]))
+	for i := range lines {
+		lines[i] = strings.TrimSuffix(lines[i], "\r")
+	}
+	r.Root = lines[0]
+	r.GitDir = resolvePath(r.Root, lines[1])
+	r.CommonDir = resolvePath(r.Root, lines[2])
 	return r, nil
 }
 

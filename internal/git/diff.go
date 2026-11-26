@@ -118,7 +118,7 @@ func (r *Repo) CommitDiff(ctx context.Context, sha, path string) (string, error)
 		args = append(args, "--format=", sha)
 	}
 	if path != "" {
-		args = append(args, "--", path)
+		args = append(args, "--", literalPathspec(path))
 	}
 	return r.run(ctx, true, args...)
 }
@@ -140,7 +140,7 @@ func (r *Repo) WorkingDiff(ctx context.Context, path string, staged, untracked b
 		args = append(args, "--cached")
 	}
 	if path != "" {
-		args = append(args, "--", path)
+		args = append(args, "--", literalPathspec(path))
 	}
 	return r.run(ctx, true, args...)
 }

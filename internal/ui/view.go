@@ -809,7 +809,7 @@ func (a *App) viewCommandPanel(width, height int) string {
 	}
 	for i := start; i < end; i++ {
 		e := a.commands[i]
-		line := e.at.Format("15:04:05") + "  " + sanitize.Line(e.line)
+		line := e.at.Format("15:04:05") + "  " + sanitize.Secrets(sanitize.Line(e.line))
 		body = append(body, truncate(styleDim.Render(truncate(line, width)), width))
 	}
 	for len(body) < avail {
@@ -1383,6 +1383,9 @@ func (a *App) contextHints() string {
 	}
 	if a.busy {
 		return i18n.S("Esc 取消当前操作", "Esc cancel operation")
+	}
+	if a.content.retry != "" {
+		return i18n.S("r 重试  Tab 切换面板", "r retry  Tab switch pane")
 	}
 	switch a.pane {
 	case PaneBranches:
