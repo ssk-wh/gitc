@@ -103,7 +103,7 @@ lazygit 风格工作台：每个区域一个完整边框，左上角中文标题
 | `/` | 行内搜索：实时过滤 hash/提交信息，`Enter` 搜全部历史 |
 | `:` | 透传任意 git 参数 |
 | `T` | 切换主题（default / light / ocean / forest / fire / rose / high-contrast） |
-| `L` / `R` / `?` | 命令输出日志 / 刷新 / 帮助 |
+| `F5` / `R` / `L` / `?` | 刷新 / 命令输出日志 / 帮助 |
 | `q` / `Ctrl+C` | 退出 |
 
 ## 设计要点

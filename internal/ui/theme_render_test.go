@@ -33,3 +33,20 @@ func TestThemeRenderSnapshot(t *testing.T) {
 		t.Error("切换主题后渲染输出应不同")
 	}
 }
+
+// TestChoiceMenuHasOwnColors 菜单每一行都显式着色，不依赖底层行的 SGR。
+func TestChoiceMenuHasOwnColors(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
+	a, _ := newFakeApp(t)
+	a.choose("菜单", []choice{{label: "第一项"}, {label: "第二项"}})
+	box, _, _ := a.choiceMenuBox()
+	if len(box) == 0 {
+		t.Fatal("菜单框为空")
+	}
+	for i, line := range box {
+		if !strings.Contains(line, "\x1b[") {
+			t.Fatalf("菜单第 %d 行未显式着色: %q", i, line)
+		}
+	}
+}

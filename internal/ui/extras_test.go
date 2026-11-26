@@ -76,7 +76,7 @@ func TestStashMenuUsesStableHash(t *testing.T) {
 func TestTagCheckoutUsesFullReference(t *testing.T) {
 	a, f := newFakeApp(t)
 	ref := git.Ref{Name: "release", FullName: "refs/tags/release", Kind: git.RefTag, Target: "aaaaaaaaaaaa1111"}
-	choice, ok := choiceByLabel(a.tagMenuChoices(ref, false), "检出该标签")
+	choice, ok := choiceByLabel(a.tagMenuChoices(ref), "检出该标签")
 	if !ok {
 		t.Fatal("标签菜单缺少检出入口")
 	}
@@ -838,5 +838,44 @@ func TestAutoRefreshErrorToastNotRepeated(t *testing.T) {
 	a.Update(msg)
 	if a.toast != "已复制" {
 		t.Fatalf("重复失败覆盖了新提示: %q", a.toast)
+	}
+}
+
+// TestF5RefreshesGitInfo 验证 F5 与 R 一样刷新状态和提交历史。
+func TestF5RefreshesGitInfo(t *testing.T) {
+	a, _ := newFakeApp(t)
+	refreshGen, logGen := a.refreshGen, a.logGen
+	cmd := sendKey(a, tea.KeyMsg{Type: tea.KeyF5})
+	if cmd == nil {
+		t.Fatal("F5 未触发刷新")
+	}
+	if a.refreshGen != refreshGen+1 || a.logGen != logGen+1 {
+		t.Fatalf("F5 未刷新状态/日志: refresh %d->%d log %d->%d", refreshGen, a.refreshGen, logGen, a.logGen)
+	}
+	if !strings.Contains(a.toast, "刷新") {
+		t.Fatalf("F5 未提示刷新中: %q", a.toast)
+	}
+}
+
+// TestCommitMenuPushOnlyForUnpushedLocal 验证只有当前分支未推送的本地提交显示推送项。
+func TestCommitMenuPushOnlyForUnpushedLocal(t *testing.T) {
+	a, _ := newFakeApp(t)
+	for i := range a.refs {
+		if a.refs[i].Kind == git.RefRemote {
+			a.refs[i].Target = "cccccccccccc3333"
+		}
+	}
+	unpushed := &a.commits[0]
+	pushed := &a.commits[2]
+	if _, ok := choiceByLabel(a.commitMenuChoices(unpushed), "推送当前分支"); !ok {
+		t.Fatalf("本地未推送提交缺少推送项: %+v", a.commitMenuChoices(unpushed))
+	}
+	if _, ok := choiceByLabel(a.commitMenuChoices(pushed), "推送当前分支"); ok {
+		t.Fatalf("已推送提交不应显示推送项: %+v", a.commitMenuChoices(pushed))
+	}
+	a.status.Detached = true
+	a.status.Branch = ""
+	if _, ok := choiceByLabel(a.commitMenuChoices(unpushed), "推送当前分支"); ok {
+		t.Fatal("分离 HEAD 时不应显示推送项")
 	}
 }

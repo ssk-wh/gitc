@@ -196,7 +196,8 @@ func overlayBox(base string, box []string, x, y, width int) string {
 		if right != "" && startCol < x+boxW {
 			right = strings.Repeat(" ", x+boxW-startCol) + right
 		}
-		lines[yy] = padRight(truncate(left+bl+right, width), width)
+		// 浮层前先复位底层 SGR，避免未着色的浮层内容继承所在行的颜色。
+		lines[yy] = padRight(truncate(left+string(rune(27))+"[0m"+bl+string(rune(27))+"[0m"+right, width), width)
 	}
 	return strings.Join(lines, string(rune(10)))
 }
@@ -1571,7 +1572,7 @@ func helpLines() []string {
 		{":", i18n.S("透传任意 git 参数", "raw git args")},
 		{"M", i18n.S("冲突态 continue / abort", "resolve merge/rebase: continue / abort")},
 		{"T", i18n.S("切换主题（default/light/ocean/forest/fire/rose/high-contrast）", "cycle theme")},
-		{"L / R / ?", i18n.S("命令日志 / 刷新 / 帮助", "command log / refresh / help")},
+		{"F5 / R / L / ?", i18n.S("刷新 / 命令日志 / 帮助", "refresh / command log / help")},
 		{"右键项目 / worktree", i18n.S("添加项目 / 切换 / 新建 / 锁定 / prune 失效记录 / 文件管理器打开", "add/switch project / new / lock / prune / reveal in file manager")},
 		{"q / Ctrl+C", i18n.S("退出", "quit")},
 	}
