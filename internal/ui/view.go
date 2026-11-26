@@ -113,7 +113,70 @@ func (a *App) baseView() string {
 	return b.String()
 }
 
-// overlayBox 把一个纯文本浮层按列叠加到 base 上，保留左右背景。
+// splitStyled 把一行按显示列切成左段、右段，并记录右段起始处仍生效的 SGR。
+func splitStyled(s string, left, right int) (string, string) {
+	var before, after strings.Builder
+	active := ""
+	col := 0
+	i := 0
+	writingRight := false
+	appendRight := func(tok string) {
+		if !writingRight {
+			writingRight = true
+			after.WriteString(active)
+		}
+		after.WriteString(tok)
+	}
+	for i < len(s) {
+		if s[i] == 0x1b {
+			j := i + 1
+			if j < len(s) && s[j] == '[' {
+				j++
+				for j < len(s) && !(s[j] >= 0x40 && s[j] <= 0x7e) {
+					j++
+				}
+				if j < len(s) {
+					j++
+				}
+			} else {
+				j++
+			}
+			seq := s[i:j]
+			if strings.HasSuffix(seq, "m") {
+				params := strings.TrimSuffix(strings.TrimPrefix(seq, string(rune(27))+"["), "m")
+				switch {
+				case params == "" || params == "0":
+					active = ""
+				case strings.HasPrefix(params, "0;"):
+					active = string(rune(27)) + "[" + strings.TrimPrefix(params, "0;") + "m"
+				default:
+					active += seq
+				}
+			}
+			if col < left {
+				before.WriteString(seq)
+			} else if col >= right {
+				appendRight(seq)
+			}
+			i = j
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		w := runewidth.RuneWidth(r)
+		tok := s[i : i+size]
+		switch {
+		case col+w <= left:
+			before.WriteString(tok)
+		case col >= right:
+			appendRight(tok)
+		}
+		col += w
+		i += size
+	}
+	return before.String(), after.String()
+}
+
+// overlayBox 把一个浮层按列叠加到 base 上，保留左右内容的颜色。
 func overlayBox(base string, box []string, x, y, width int) string {
 	if len(box) == 0 {
 		return base
@@ -124,16 +187,10 @@ func overlayBox(base string, box []string, x, y, width int) string {
 		if yy < 0 || yy >= len(lines) {
 			continue
 		}
-		plain := ansi.Strip(lines[yy])
-		left := runewidth.Truncate(plain, x, "")
-		leftW := runewidth.StringWidth(left)
-		left += strings.Repeat(" ", maxInt(0, x-leftW))
-		endCol := x + strWidth(bl)
-		tail, skipped := stripColumnPrefix(plain, endCol)
-		if skipped < endCol {
-			tail = strings.Repeat(" ", endCol-skipped) + tail
-		}
-		lines[yy] = padRight(truncate(left+bl+tail, width), width)
+		// 用浮层自身的显示宽度确定右侧切分点，避免边框错位。
+		boxW := strWidth(bl)
+		left, right := splitStyled(lines[yy], x, x+boxW)
+		lines[yy] = padRight(truncate(left+bl+right, width), width)
 	}
 	return strings.Join(lines, string(rune(10)))
 }

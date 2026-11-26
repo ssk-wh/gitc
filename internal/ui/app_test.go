@@ -2983,3 +2983,21 @@ func TestSameRefs(t *testing.T) {
 		t.Fatal("目标变化应检测到")
 	}
 }
+
+// TestOverlayKeepsBackgroundColors 浮层所在行要保留左右内容的原始颜色。
+func TestOverlayKeepsBackgroundColors(t *testing.T) {
+	base := "\x1b[31mLEFT\x1b[0m     \x1b[32mRIGHT\x1b[0m"
+	out := overlayBox(base, []string{"[BOX]"}, 4, 0, 20)
+	if !strings.Contains(out, "\x1b[31m") {
+		t.Fatalf("左侧颜色丢失: %q", out)
+	}
+	if !strings.Contains(out, "\x1b[32m") {
+		t.Fatalf("右侧颜色丢失: %q", out)
+	}
+	plain := ansi.Strip(out)
+	for _, want := range []string{"LEFT", "[BOX]", "RIGHT"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("内容缺失 %q: %q", want, plain)
+		}
+	}
+}
