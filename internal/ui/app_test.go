@@ -2927,10 +2927,16 @@ func TestRemoveCurrentProject(t *testing.T) {
 	if a.currentPath != cleanProjectPath(dirB) {
 		t.Fatalf("未自动切换项目: %q", a.currentPath)
 	}
-	// 最后一个项目不可移除
+	// 最后一个项目不可移除，菜单也不显示移除项
 	a.removeProject(a.projects[0])
 	if len(a.projects) != 1 {
 		t.Fatal("最后一个项目不应被移除")
+	}
+	a.openProjectMenu(0)
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "移除项目") {
+			t.Fatalf("单项目菜单不应显示移除项: %+v", a.modal.choices)
+		}
 	}
 }
 

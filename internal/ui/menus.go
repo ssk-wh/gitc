@@ -752,9 +752,11 @@ func (a *App) openProjectMenu(focus int) {
 			a.newWorktreePrompt(p)
 			return nil
 		}})
-		choices = append(choices, choice{label: i18n.S("移除项目 "+p.Name, "remove project "+p.Name), action: func(a *App) tea.Cmd {
-			return a.removeProject(p)
-		}})
+		if len(a.projects) > 1 {
+			choices = append(choices, choice{label: i18n.S("移除项目 "+p.Name, "remove project "+p.Name), action: func(a *App) tea.Cmd {
+				return a.removeProject(p)
+			}})
+		}
 	}
 	a.choose(title, choices)
 }
