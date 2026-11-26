@@ -3195,7 +3195,7 @@ func TestHelpTwoColumnLayout(t *testing.T) {
 	a.overlay = overlayHelp
 	a.detail.offset = 0
 	v := plainView(a)
-	for _, want := range []string{"██████ ██ ██████ ██████", "终端里的 Git 工作台", "github.com/ssk-wh/gitc", "快捷键", "↑/↓ 滚动快捷键"} {
+	for _, want := range []string{"██████ ██ ██████ ██████", "终端里的 Git 工作台", "https://github.com/ssk-wh/gitc", "https://github.com/ssk-wh/gitc/releases", "https://github.com/ssk-wh/gitc/issues", "快捷键", "↑/↓ 滚动快捷键"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("帮助页缺少 %q:\n%s", want, v)
 		}
