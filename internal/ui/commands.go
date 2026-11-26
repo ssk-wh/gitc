@@ -222,8 +222,25 @@ func (a *App) refreshCmd(quick bool) tea.Cmd {
 }
 
 // reloadLogCmd 重新流式加载提交历史。
+// reloadLogCmdPreserve 后台重载但保留当前画面，收到首批数据后再替换。
+func (a *App) reloadLogCmdPreserve() tea.Cmd {
+	a.clearCommitSelection()
+	a.logGen++
+	a.logPreserve = true
+	gen := a.logGen
+	a.rememberSelection()
+	if a.stream != nil {
+		a.stream.cancel()
+	}
+	a.stream = newLogStream(a.svc, maxCommits, a.branchFilter, a.branchFilterScope)
+	a.loadingLog = true
+	a.truncated = false
+	return readBatchCmd(a.stream, gen)
+}
+
 func (a *App) reloadLogCmd() tea.Cmd {
 	a.clearCommitSelection()
+	a.logPreserve = false
 	a.logGen++
 	gen := a.logGen
 	a.rememberSelection()
@@ -509,6 +526,86 @@ func (a *App) resolveWorkspacePaths(root string, paths []string) []string {
 	return out
 }
 
+const maxCachedCommits = 20000
+
+// saveProjectCache 保存当前项目的界面快照。
+func (a *App) saveProjectCache() {
+	if a.currentPath == "" {
+		return
+	}
+	commits := a.commits
+	if len(commits) > maxCachedCommits {
+		commits = commits[:maxCachedCommits]
+	}
+	copyMap := func(m map[string]int) map[string]int {
+		out := make(map[string]int, len(m))
+		for k, v := range m {
+			out[k] = v
+		}
+		return out
+	}
+	a.projectCache[a.currentPath] = &projectCache{
+		commits:      append([]git.Commit(nil), commits...),
+		refs:         append([]git.Ref(nil), a.refs...),
+		status:       a.status,
+		state:        a.state,
+		stashes:      append([]git.Stash(nil), a.stashes...),
+		layout:       a.layout,
+		commitColor:  copyMap(a.commitColor),
+		branchColor:  copyMap(a.branchColor),
+		graphSel:     a.graphSel,
+		graphOff:     a.graphOff,
+		sideSelKey:   a.sideSelKey,
+		branchFilter: a.branchFilter,
+		filterScope:  a.branchFilterScope,
+		filterLabel:  a.branchFilterLabel,
+		truncated:    a.truncated,
+	}
+}
+
+// restoreProjectCache 用缓存立即渲染项目，返回需要异步加载的文件命令。
+func (a *App) restoreProjectCache(root string) (tea.Cmd, bool) {
+	c, ok := a.projectCache[root]
+	if !ok || (len(c.commits) == 0 && len(c.refs) == 0) {
+		return nil, false
+	}
+	a.commits = append([]git.Commit(nil), c.commits...)
+	a.refs = append([]git.Ref(nil), c.refs...)
+	a.status = c.status
+	a.state = c.state
+	a.stashes = append([]git.Stash(nil), c.stashes...)
+	a.commitColor = c.commitColor
+	a.branchColor = c.branchColor
+	a.branchFilter, a.branchFilterScope, a.branchFilterLabel = c.branchFilter, c.filterScope, c.filterLabel
+	a.graphSel, a.graphOff = c.graphSel, c.graphOff
+	a.truncated = c.truncated
+	a.builder = graph.NewBuilder()
+	for _, commit := range a.commits {
+		a.builder.Add(graph.Commit{Hash: commit.Hash, Parents: commit.Parents})
+	}
+	a.builder.SetColorOf(a.commitColor)
+	if c.layout != nil {
+		a.layout = c.layout
+	} else {
+		a.layout = a.builder.Layout()
+	}
+	a.sideSelKey = c.sideSelKey
+	a.rebuildSidebar()
+	a.clampSelection()
+	a.rebuildChanges()
+	a.invalidateView()
+	var cmd tea.Cmd
+	if a.onDirtyRow() {
+		cmd = a.loadWorkingFiles()
+	} else {
+		cmd = a.loadFilesForSelection()
+	}
+	return cmd, true
+}
+
+// switchReloadMsg 在缓存首帧渲染后触发后台重新加载。
+type switchReloadMsg struct{ path string }
+
 // switchProject 打开并切换到指定项目，重置该仓库的界面状态。
 func (a *App) switchProject(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(a.projects) {
@@ -521,6 +618,7 @@ func (a *App) switchProject(idx int) tea.Cmd {
 	if a.busy {
 		return a.busyToast()
 	}
+	a.saveProjectCache()
 	svc, err := a.openRepo(p.Path)
 	if err != nil {
 		a.setToast(i18n.S("打开项目失败: ", "open project failed: ")+firstLine(err.Error()), true)
@@ -549,9 +647,17 @@ func (a *App) switchProject(idx int) tea.Cmd {
 	a.currentPath = root
 	a.resetForProject()
 	a.SetProjects(paths, root)
+	fileCmd, restored := a.restoreProjectCache(root)
+	a.saveConfig()
+	if restored {
+		// 先用缓存渲染，再延迟后台刷新，避免首帧空白。
+		reload := tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg {
+			return switchReloadMsg{path: root}
+		})
+		return tea.Batch(a.refreshCmd(true), reload, fileCmd, a.loadProjectBranchesCmd())
+	}
 	a.sideSelKey = "p:" + root
 	a.rebuildSidebar()
-	a.saveConfig()
 	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.loadProjectBranchesCmd())
 }
 

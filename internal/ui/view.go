@@ -1004,6 +1004,7 @@ func (a *App) renderRow(row int, layout *graph.Layout, vc []git.Commit, width in
 		badgeStyled.WriteString(head + " ")
 		badgeWidth += 7
 	}
+	const badgeCap = 56
 	for _, r := range refs {
 		name := sanitize.Line(r.Name)
 		if r.Kind == git.RefLocal && r.Head {
@@ -1011,8 +1012,18 @@ func (a *App) renderRow(row int, layout *graph.Layout, vc []git.Commit, width in
 		}
 		txt := "[" + name + "]"
 		w := strWidth(txt)
-		if badgeWidth+w+1 > 36 {
-			break
+		if badgeWidth+w+1 > badgeCap {
+			// 长分支名不要整体丢弃：在剩余宽度内截断显示
+			avail := badgeCap - badgeWidth - 3 // 两个方括号 + 间隔
+			if avail < 4 {
+				break
+			}
+			name = truncate(name, avail)
+			txt = "[" + name + "]"
+			w = strWidth(txt)
+			if badgeWidth+w+1 > badgeCap {
+				break
+			}
 		}
 		badgeWidth += w + 1
 		style := refStyle(r.Kind)

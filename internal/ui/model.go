@@ -162,6 +162,25 @@ type projectEntry struct {
 	Path string
 }
 
+// projectCache 是切换项目时保留的快照，用于先渲染缓存再后台刷新。
+type projectCache struct {
+	commits      []git.Commit
+	refs         []git.Ref
+	status       git.Status
+	state        git.RepoState
+	stashes      []git.Stash
+	layout       *graph.Layout
+	commitColor  map[string]int
+	branchColor  map[string]int
+	graphSel     int
+	graphOff     int
+	sideSelKey   string
+	branchFilter string
+	filterScope  string
+	filterLabel  string
+	truncated    bool
+}
+
 // App 是根模型。
 type App struct {
 	svc    git.Service
@@ -276,6 +295,8 @@ type App struct {
 	projectSel      int
 	projectOff      int
 	projectBranch   map[string]string
+	projectCache    map[string]*projectCache
+	logPreserve     bool
 	currentPath     string
 	openRepo        func(string) (git.Service, error)
 	pickDir         func() (string, error)
@@ -365,6 +386,7 @@ func New(svc git.Service) *App {
 		commitAnchor:    -1,
 		remoteTagCache:  map[string]bool{},
 		projectBranch:   map[string]string{},
+		projectCache:    map[string]*projectCache{},
 		openRepo:        func(path string) (git.Service, error) { return git.Open(path) },
 		pickDir:         platform.PickDirectory,
 		changesExpanded: map[string]bool{},

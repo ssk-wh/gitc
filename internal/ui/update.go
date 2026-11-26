@@ -102,6 +102,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.gen != a.logGen {
 			return a, nil
 		}
+		if a.logPreserve {
+			// 首批数据到达：用新流替换缓存画面
+			a.logPreserve = false
+			a.commits = nil
+			a.commitColor = map[string]int{}
+			a.builder = graph.NewBuilder()
+			a.layout = a.builder.Layout()
+			a.invalidateView()
+		}
 		a.loadingLog = !m.done
 		if len(m.commits) > 0 {
 			first := a.builder.Len() == 0
@@ -156,6 +165,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				msg += i18n.S(" — 按 P 推送并设置上游", " — press P to push and set upstream")
 			case strings.Contains(lower, "index.lock"):
 				msg += i18n.S(" — 有 git 进程占用，检查 .git/index.lock", " — .git/index.lock is held by another process")
+			case strings.Contains(lower, "already checked out at"):
+				msg += i18n.S(" — 该分支已在其他工作树检出，不能重复检出", " — branch is already checked out in another worktree")
 			case strings.Contains(lower, "conflict"), strings.Contains(lower, "resolve all conflicts"):
 				msg += i18n.S(" — 按 M 处理冲突", " — press M to resolve")
 			}
@@ -210,6 +221,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.chooseProjectDir(m.path)
 		}
 		return a, nil
+
+	case switchReloadMsg:
+		if strings.TrimSpace(m.path) != a.currentPath {
+			return a, nil
+		}
+		return a, a.reloadLogCmdPreserve()
 
 	case projectBranchesMsg:
 		for p, b := range m.branches {

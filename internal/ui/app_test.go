@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -2537,5 +2538,68 @@ func TestModalFloatsOverContent(t *testing.T) {
 	v = plainView(a)
 	if !strings.Contains(v, "输入内容") || !strings.Contains(v, "修复切换音频崩溃") {
 		t.Fatal("输入框未浮在主界面上")
+	}
+}
+
+// TestLongBranchBadgeVisible 长分支名要截断显示，不能整条徽标消失。
+func TestLongBranchBadgeVisible(t *testing.T) {
+	a, _ := newFakeApp(t)
+	long := "fix/device-space-text-baseline-20260904"
+	a.refs = append(a.refs, git.Ref{Name: long, Kind: git.RefLocal, Target: "aaaaaaaaaaaa1111"})
+	a.rebuildCommitColors()
+	for _, line := range strings.Split(plainView(a), string(rune(10))) {
+		if strings.Contains(line, "[HEAD]") {
+			if !strings.Contains(line, "fix/device-space") {
+				t.Fatalf("长分支名徽标未显示: %q", line)
+			}
+			return
+		}
+	}
+	t.Fatal("未找到 HEAD 行")
+}
+
+// TestCheckoutWorktreeHint 分支被其他工作树占用时给出明确提示。
+func TestCheckoutWorktreeHint(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(opDoneMsg{name: "checkout fix/x", err: errors.New("fatal: 'fix/x' is already checked out at '/tmp/wt'")})
+	if !strings.Contains(a.toast, "工作树") && !strings.Contains(a.toast, "worktree") {
+		t.Fatalf("缺少工作树提示: %q", a.toast)
+	}
+}
+
+// TestProjectCacheRestore 切回已打开过的项目应先恢复缓存再后台刷新。
+func TestProjectCacheRestore(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{dirA, dirB}, dirA)
+	a.currentPath = cleanProjectPath(dirA)
+	a.svc = &fakeSvc{root: dirA, status: git.Status{Branch: "main"}}
+	a.commits = sampleCommits()
+	a.refs = []git.Ref{{Name: "main", Kind: git.RefLocal, Target: "aaaaaaaaaaaa1111", Head: true}}
+	a.status = git.Status{Branch: "main", OID: "aaaaaaaaaaaa1111"}
+	a.openRepo = func(p string) (git.Service, error) {
+		return &fakeSvc{root: p, status: git.Status{Branch: "dev"}}, nil
+	}
+	cmd := a.switchProject(a.projectIndex(cleanProjectPath(dirB)))
+	if cmd == nil {
+		t.Fatal("切换项目未返回命令")
+	}
+	if len(a.commits) != 0 {
+		t.Fatal("无缓存项目应重新加载")
+	}
+	cmd = a.switchProject(a.projectIndex(cleanProjectPath(dirA)))
+	if cmd == nil {
+		t.Fatal("切回项目未返回命令")
+	}
+	if len(a.commits) != len(sampleCommits()) || a.commits[0].Hash != "aaaaaaaaaaaa1111" {
+		t.Fatalf("切回未恢复缓存: %+v", a.commits)
+	}
+	if a.projectCache[cleanProjectPath(dirA)] == nil {
+		t.Fatal("项目缓存未保存")
+	}
+	// 后台刷新消息应保留当前画面直到首批数据到达
+	a.Update(switchReloadMsg{path: a.currentPath})
+	if len(a.commits) == 0 || !a.logPreserve {
+		t.Fatalf("后台刷新过早清空缓存: commits=%d preserve=%v", len(a.commits), a.logPreserve)
 	}
 }
