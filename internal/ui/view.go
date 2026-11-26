@@ -1453,7 +1453,7 @@ func (a *App) clampOverlayScroll() {
 	case overlayLog:
 		total = len(a.logs)
 	case overlayHelp:
-		if a.width >= 96 {
+		if a.width >= helpSplitMinWidth {
 			total = len(helpKeyLines())
 		} else {
 			total = len(helpLines())
@@ -1533,7 +1533,7 @@ func (a *App) viewHelp() string {
 	var b strings.Builder
 	b.WriteString(styleTitle.Render(i18n.S("gitc 帮助", "gitc help")))
 	b.WriteByte('\n')
-	if a.width < 96 {
+	if a.width < helpSplitMinWidth {
 		lines := helpLines()
 		off := clampHelpOffset(a.detail.offset, len(lines), viewH)
 		end := off + viewH
@@ -1612,10 +1612,10 @@ func helpBrandLines() []string {
 		"  "+styleDim.Render(i18n.S("流式加载 · 键鼠操作 · 跨平台", "streaming · mouse & keyboard · cross-platform")),
 		"",
 		"  "+styleTitle.Render(i18n.S("项目信息", "Project")),
-		"  "+styleAccent.Render(padRight("GitHub", 10))+"github.com/ssk-wh/gitc",
-		"  "+styleAccent.Render(padRight(i18n.S("发布页", "Releases"), 10))+"/releases",
-		"  "+styleAccent.Render(padRight(i18n.S("问题反馈", "Issues"), 10))+"/issues",
-		"  "+styleAccent.Render(padRight(i18n.S("升级", "Update"), 10))+"gitc --update",
+		"  "+styleAccent.Render(padRight("GitHub", 9))+"https://github.com/ssk-wh/gitc",
+		"  "+styleAccent.Render(padRight(i18n.S("发布页", "Releases"), 9))+"https://github.com/ssk-wh/gitc/releases",
+		"  "+styleAccent.Render(padRight(i18n.S("问题反馈", "Issues"), 9))+"https://github.com/ssk-wh/gitc/issues",
+		"  "+styleAccent.Render(padRight(i18n.S("升级", "Update"), 9))+"gitc --update",
 	)
 	return lines
 }
@@ -1629,15 +1629,11 @@ func helpKeyLines() []string {
 	return lines
 }
 
+// helpSplitMinWidth 是启用双栏帮助页的最小宽度，保证左栏网址完整显示。
+const helpSplitMinWidth = 104
+
 func helpLeftWidth(width int) int {
-	switch {
-	case width >= 110:
-		return 38
-	case width >= 100:
-		return 36
-	default:
-		return 34
-	}
+	return 50
 }
 
 // helpRows 是快捷键数据，供单栏与双栏布局复用。
