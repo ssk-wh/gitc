@@ -16,6 +16,7 @@ func (a *App) SetConfig(c config.File) {
 	a.drawerLeftW = c.DrawerLeft
 	a.rightTopH = c.RightTop
 	a.leftTopH = c.LeftTop
+	a.projectH = c.ProjectH
 	a.leftMidH = c.LeftMid
 	a.cmdH = c.CommandH
 	a.applyThemeSettings(c.Theme, c.Colors)
@@ -34,6 +35,7 @@ func (a *App) saveConfig() {
 	a.cfg.DrawerLeft = a.drawerLeftW
 	a.cfg.RightTop = a.rightTopH
 	a.cfg.LeftTop = a.leftTopH
+	a.cfg.ProjectH = a.projectH
 	a.cfg.LeftMid = a.leftMidH
 	a.cfg.CommandH = a.cmdH
 	a.cfg.Theme = a.themeName
