@@ -17,6 +17,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Theme:       "light",
 		Colors:      map[string]string{"accent": "#ff0000", "lane0": "#00ff00"},
 		LeftWidth:   30,
+		ProjectH:    4,
 		DrawerLeft:  24,
 		RightTop:    12,
 		LeftTop:     10,
@@ -35,7 +36,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.Colors["accent"] != "#ff0000" || got.Colors["lane0"] != "#00ff00" {
 		t.Errorf("Colors = %+v", got.Colors)
 	}
-	if got.LeftWidth != 30 || got.DrawerLeft != 24 || got.RightTop != 12 ||
+	if got.LeftWidth != 30 || got.ProjectH != 4 || got.DrawerLeft != 24 || got.RightTop != 12 ||
 		got.LeftTop != 10 || got.LeftMid != 9 || got.CommandH != 5 {
 		t.Errorf("布局字段 = %+v", got)
 	}

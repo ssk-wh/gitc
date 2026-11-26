@@ -16,6 +16,8 @@ type File struct {
 	DrawerLeft int `json:"drawer_left,omitempty"`
 	// RightTop 是提交区高度（0 表示默认比例）
 	RightTop int `json:"right_top,omitempty"`
+	// ProjectH 是项目区高度（0 表示自适应）
+	ProjectH int `json:"project_h,omitempty"`
 	// LeftTop 是左侧分支区高度（0 表示默认比例）
 	LeftTop int `json:"left_top,omitempty"`
 	// LeftMid 是左侧改动区高度（0 表示默认比例）

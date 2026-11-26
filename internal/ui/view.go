@@ -152,7 +152,7 @@ func (a *App) dividerHighlight(body string, div int, dragging bool) string {
 		style = styleGood.Bold(true)
 	}
 	l := a.panelLayout()
-	horiz := div == 2 || div == 4 || div == 5
+	horiz := div == 2 || div == 4 || div == 5 || div == 7
 	ch := "║"
 	if horiz {
 		ch = "═"
@@ -168,6 +168,8 @@ func (a *App) dividerHighlight(body string, div int, dragging bool) string {
 			for y := l.rightTopH + 1; y < l.rightTopH+1+l.drawerH && y < len(lines); y++ {
 				lines[y] = replaceColumn(lines[y], l.leftW+1+a.drawerSplit(l.rightW), style.Render(ch), a.width)
 			}
+		case 7:
+			lines = replaceRowSegment(lines, l.projH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
 		case 4:
 			lines = replaceRowSegment(lines, l.projH+1+l.leftTopH, 0, l.leftW, style.Render(strings.Repeat(ch, l.leftW)), a.width)
 		case 2:
@@ -425,18 +427,16 @@ func (a *App) viewProjectsPanel(width, height int) string {
 	for _, r := range rows {
 		label := ""
 		if r.worktree == nil {
-			hasChildren := len(a.worktrees[r.project.Path]) > 1
-			arrow := "  "
-			if hasChildren {
+			label = r.project.Name
+			if len(a.worktrees[r.project.Path]) > 1 {
 				if a.projectCollapsed[r.project.Path] {
-					arrow = "▸ "
+					label = "▸ " + label
 				} else {
-					arrow = "▾ "
+					label = "▾ " + label
 				}
 			}
-			label = arrow + r.project.Name
 		} else {
-			label = "  └ " + worktreeLabel(*r.worktree)
+			label = "  " + worktreeLabel(*r.worktree)
 		}
 		branch := ""
 		if r.worktree != nil {
@@ -1270,6 +1270,8 @@ func (a *App) contextHints() string {
 	}
 	if a.dragMode != 0 {
 		switch a.dragMode {
+		case 7:
+			return fmt.Sprintf(i18n.S("拖动中：项目区 %d 行", "dragging: projects %d rows"), a.panelLayout().projH)
 		case 1:
 			return fmt.Sprintf(i18n.S("拖动中：左栏 %d 列", "dragging: left %d cols"), a.panelLayout().leftW)
 		case 4:

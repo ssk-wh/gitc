@@ -324,6 +324,7 @@ type App struct {
 	currentProjectPath string
 	logPreserve        bool
 	currentPath        string
+	projectH           int
 	openRepo           func(string) (git.Service, error)
 	pickDir            func() (string, error)
 	drawerLeftW        int // 抽屉文件列宽度（0 表示默认比例）
@@ -1126,13 +1127,22 @@ func (a *App) panelLayout() panelLayout {
 	if drawerH < 3 {
 		drawerH = 3
 	}
-	// 左上角项目区：项目 + 展开的 worktree，最多 8 行
-	projH := len(a.projectRows()) + 2
+	// 左上角项目区：项目 + 展开的 worktree；支持手动拖动高度
+	projH := a.projectH
+	if projH <= 0 {
+		projH = len(a.projectRows()) + 2
+		if projH < 3 {
+			projH = 3
+		}
+		if projH > 10 {
+			projH = 10
+		}
+	}
+	if projH > bodyH-10 {
+		projH = bodyH - 10
+	}
 	if projH < 3 {
 		projH = 3
-	}
-	if projH > 10 {
-		projH = 10
 	}
 	avail := bodyH - projH - 1
 	// 左侧分支 + 提交信息；提交信息默认高度与文件区（抽屉）一致
