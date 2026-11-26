@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,5 +67,20 @@ func TestLoadMissingOrCorrupt(t *testing.T) {
 	}
 	if got := Load(); got.Theme != "" || got.Colors != nil {
 		t.Errorf("损坏配置应返回零值: %+v", got)
+	}
+	if err := Save(File{Theme: "ocean", LeftWidth: 42}); err != nil {
+		t.Fatalf("替换损坏配置失败: %v", err)
+	}
+	if got := Load(); got.Theme != "ocean" || got.LeftWidth != 42 {
+		t.Fatalf("替换后配置错误: %+v", got)
+	}
+	entries, err := os.ReadDir(filepath.Dir(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Fatalf("原子保存遗留临时文件: %s", entry.Name())
+		}
 	}
 }

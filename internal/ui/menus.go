@@ -76,6 +76,12 @@ func (a *App) openContextMenu() tea.Cmd {
 			return nil
 		}
 		a.choose(fmt.Sprintf(i18n.S("文件 %s", "file %s"), sanitize.Line(n.path)), a.fileNodeMenuChoices(n, a.filesOwner == "work"))
+	case PaneContent:
+		a.openContentHeaderMenu()
+	case PaneLog:
+		a.openCommandsHeaderMenu()
+	case PaneInfo:
+		a.openInfoHeaderMenu()
 	}
 	return nil
 }
@@ -94,12 +100,19 @@ func (a *App) remoteRefForBranch(ref git.Ref) (git.Ref, bool) {
 	return git.Ref{}, false
 }
 
+func refIdentity(ref git.Ref) string {
+	if ref.FullName != "" {
+		return ref.FullName
+	}
+	return ref.Name
+}
+
 // tagMenuChoices 生成标签菜单；pushed 表示 origin 已存在该标签。
 func (a *App) tagMenuChoices(ref git.Ref, pushed bool) []choice {
 	out := []choice{
 		{label: i18n.S("检出该标签", "checkout tag"), action: func(a *App) tea.Cmd {
 			return a.runOp("checkout "+ref.Name, func(ctx context.Context) (string, error) {
-				return a.svc.Checkout(ctx, ref.Name)
+				return a.svc.Checkout(ctx, refIdentity(ref))
 			})
 		}},
 	}
@@ -199,7 +212,7 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 				return nil
 			}},
 			{label: i18n.S("只看该分支的提交", "show commits of this branch"), action: func(a *App) tea.Cmd {
-				return a.setBranchFilter(ref.Name, "", ref.Name)
+				return a.setBranchFilter(refIdentity(ref), "", ref.Name)
 			}},
 			{label: i18n.S("设为当前分支上游", "set as upstream"), action: func(a *App) tea.Cmd {
 				cur := a.status.Branch
@@ -267,9 +280,8 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 		}})
 		return out
 	case sideRemote:
-		local := remoteLocalName(ref.Name)
 		return []choice{
-			{label: i18n.S("检出/创建跟踪分支 "+local, "checkout tracking "+local), action: func(a *App) tea.Cmd {
+			{label: i18n.S("检出/创建跟踪分支 "+ref.Name, "checkout tracking "+ref.Name), action: func(a *App) tea.Cmd {
 				return a.sidebarEnter(&sideItem{kind: sideRemote, ref: ref})
 			}},
 			{label: i18n.S("合并到当前分支", "merge into current"), action: func(a *App) tea.Cmd {
@@ -289,7 +301,7 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 					a.setToast(i18n.S("当前为分离 HEAD，无法设置上游", "detached HEAD; cannot set upstream"), true)
 					return nil
 				}
-				target := ref.Name
+				target := refIdentity(ref)
 				return a.runOp("set-upstream "+target, func(ctx context.Context) (string, error) {
 					return a.svc.SetUpstream(ctx, cur, target)
 				})
@@ -327,12 +339,12 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 			}},
 			{label: i18n.S("应用（apply）", "apply"), action: func(a *App) tea.Cmd {
 				return a.runOp("stash apply", func(ctx context.Context) (string, error) {
-					return a.svc.StashApply(ctx, st.Index)
+					return a.svc.StashApply(ctx, st.Hash)
 				})
 			}},
 			{label: i18n.S("弹出（pop）", "pop"), action: func(a *App) tea.Cmd {
 				return a.runOp("stash pop", func(ctx context.Context) (string, error) {
-					return a.svc.StashPop(ctx, st.Index)
+					return a.svc.StashPop(ctx, st.Hash)
 				})
 			}},
 			{label: i18n.S("删除（drop）", "drop"), action: func(a *App) tea.Cmd {
@@ -480,9 +492,11 @@ func (a *App) fileMenuChoices(f fileEntry, working bool) []choice {
 				return a.svc.Stage(ctx, path)
 			})
 		}})
-		out = append(out, choice{label: i18n.S("丢弃改动（危险）", "discard changes"), action: func(a *App) tea.Cmd {
-			return a.discardFilePrompt(f)
-		}})
+		if !f.unmerged {
+			out = append(out, choice{label: i18n.S("丢弃改动（危险）", "discard changes"), action: func(a *App) tea.Cmd {
+				return a.discardFilePrompt(f)
+			}})
+		}
 	}
 	return out
 }
@@ -557,14 +571,44 @@ func (a *App) revertPrompt(c *git.Commit) {
 		})
 }
 
+func discardPaths(files []fileEntry) []string {
+	paths := make([]string, 0, len(files)*2)
+	seen := map[string]bool{}
+	for _, f := range files {
+		for _, path := range []string{f.path, f.origPath} {
+			if path != "" && !seen[path] {
+				seen[path] = true
+				paths = append(paths, path)
+			}
+		}
+	}
+	return paths
+}
+
 func (a *App) discardFilePrompt(f fileEntry) tea.Cmd {
-	a.confirm(i18n.S("丢弃改动 "+f.path, "discard changes "+f.path),
-		i18n.S("未提交改动将永久丢失。", "Uncommitted changes will be lost permanently."),
-		discardCommand(f.path, f.untracked), true, func(a *App) tea.Cmd {
-			return a.runOp("discard "+f.path, func(ctx context.Context) (string, error) {
-				return a.svc.Discard(ctx, f.untracked, f.path)
-			})
+	if f.unmerged {
+		a.setToast(i18n.S("冲突文件请先处理冲突，或使用全部丢弃", "resolve conflicts first, or use discard all"), true)
+		return nil
+	}
+	paths := discardPaths([]fileEntry{f})
+	title := i18n.S("丢弃改动 "+f.path, "discard changes "+f.path)
+	desc := i18n.S("仅恢复工作区内容，暂存改动将保留。", "Restores working-tree content only; staged changes are kept.")
+	command := "git checkout -- " + strings.Join(paths, " ")
+	if f.staged {
+		desc = i18n.S("该文件的暂存、工作区及未跟踪改动将永久丢失。", "Staged, working-tree, and untracked changes to this file will be lost.")
+		command = "git restore --source=HEAD --staged --worktree -- " + strings.Join(paths, " ") + " && git clean -f -d -- " + strings.Join(paths, " ")
+	} else if f.untracked {
+		desc = i18n.S("该未跟踪文件或目录将被永久删除。", "The untracked file or directory will be deleted permanently.")
+		command = "git clean -f -d -- " + strings.Join(paths, " ")
+	}
+	a.confirm(title, desc, command, true, func(a *App) tea.Cmd {
+		return a.runOp("discard "+f.path, func(ctx context.Context) (string, error) {
+			if f.staged {
+				return a.svc.DiscardAll(ctx, paths...)
+			}
+			return a.svc.Discard(ctx, f.untracked, paths...)
 		})
+	})
 	return nil
 }
 
@@ -694,19 +738,13 @@ func (a *App) dirMenuChoices(n *fileNode, working bool) []choice {
 			})
 		}},
 		choice{label: i18n.S("丢弃该目录全部改动（危险）", "discard directory changes (dangerous)"), action: func(a *App) tea.Cmd {
+			discard := discardPaths(files)
+			args := strings.Join(discard, " ")
 			a.confirm(i18n.S("丢弃目录 "+n.path+" 的全部改动", "discard all changes under "+n.path),
-				i18n.S("该目录下未提交改动将永久丢失。", "Uncommitted changes under this directory will be lost."),
-				"git checkout/clean -- "+n.path, true, func(a *App) tea.Cmd {
+				i18n.S("该目录相关的暂存、工作区及未跟踪改动将永久丢失。", "Staged, working-tree, and untracked changes will be lost."),
+				"git restore --source=HEAD --staged --worktree -- "+args+" && git clean -f -d -- "+args, true, func(a *App) tea.Cmd {
 					return a.runOp("discard "+n.path, func(ctx context.Context) (string, error) {
-						var all string
-						for _, f := range files {
-							out, err := a.svc.Discard(ctx, f.untracked, f.path)
-							all += out
-							if err != nil {
-								return all, err
-							}
-						}
-						return all, nil
+						return a.svc.DiscardAll(ctx, discard...)
 					})
 				})
 			return nil
@@ -1044,7 +1082,7 @@ func (a *App) openCommandsHeaderMenu() {
 		{label: i18n.S("复制全部", "copy all"), action: func(a *App) tea.Cmd {
 			lines := make([]string, 0, len(a.commands))
 			for _, e := range a.commands {
-				lines = append(lines, e.at.Format("15:04:05")+"  "+e.line)
+				lines = append(lines, e.at.Format("15:04:05")+"  "+sanitize.Secrets(sanitize.Line(e.line)))
 			}
 			return a.copyToClipboard(strings.Join(lines, string(rune(10))))
 		}},

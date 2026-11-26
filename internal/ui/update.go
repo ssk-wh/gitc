@@ -15,10 +15,14 @@ import (
 	"github.com/ssk-wh/gitc/internal/graph"
 	"github.com/ssk-wh/gitc/internal/i18n"
 	"github.com/ssk-wh/gitc/internal/platform"
+	"github.com/ssk-wh/gitc/internal/sanitize"
 )
 
 // progressMsg 是一条实时进度（fetch/push/pull）。
-type progressMsg struct{ line string }
+type progressMsg struct {
+	id   int
+	line string
+}
 
 // Update 处理消息。
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -45,7 +49,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case commandMsg:
-		a.commands = append(a.commands, commandEntry{at: m.at, line: m.line})
+		line := sanitize.Secrets(sanitize.Line(m.line))
+		a.commands = append(a.commands, commandEntry{at: m.at, line: line})
 		if len(a.commands) > 300 {
 			a.commands = a.commands[len(a.commands)-300:]
 		}
@@ -61,6 +66,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case progressMsg:
+		if m.id != a.opID || !a.busy {
+			return a, nil
+		}
 		line := strings.TrimSpace(m.line)
 		if line != "" {
 			a.setToast(line, false)
@@ -83,14 +91,35 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.gen != a.refreshGen {
 			return a, nil
 		}
-		if m.err != nil {
-			a.setToast(firstLine(m.err.Error()), true)
-			return a, nil
+		status, refs, state, stashes := a.status, a.refs, a.state, a.stashes
+		if m.statusErr == nil {
+			status = m.status
+			if m.quick {
+				status.Untracked = a.status.Untracked
+			}
 		}
-		same := reflect.DeepEqual(a.status, m.status) &&
-			reflect.DeepEqual(a.refs, m.refs) &&
-			reflect.DeepEqual(a.state, m.state) &&
-			reflect.DeepEqual(a.stashes, m.stashes)
+		if m.refsErr == nil {
+			refs = m.refs
+		}
+		if m.stateErr == nil {
+			state = m.state
+		}
+		if !m.quick && m.stashesErr == nil {
+			stashes = m.stashes
+		}
+		if m.err != nil {
+			msg := firstLine(m.err.Error())
+			if !m.auto || a.refreshErr != msg {
+				a.setToast(msg, true)
+			}
+			a.refreshErr = msg
+		} else {
+			a.refreshErr = ""
+		}
+		same := reflect.DeepEqual(a.status, status) &&
+			reflect.DeepEqual(a.refs, refs) &&
+			reflect.DeepEqual(a.state, state) &&
+			reflect.DeepEqual(a.stashes, stashes)
 		if m.auto && same {
 			// 外部没有变化：不更新模型、不触发任何重绘
 			a.verifyAfterRestore = false
@@ -99,13 +128,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		oldOID := a.status.OID
 		oldBranch := a.status.Branch
 		oldRefs := a.refs
-		a.status = m.status
+		a.status = status
 		if a.currentPath != "" {
-			a.projectBranch[a.currentPath] = m.status.Branch
+			a.projectBranch[a.currentPath] = status.Branch
 		}
-		a.refs = m.refs
-		a.state = m.state
-		a.stashes = m.stashes
+		a.refs = refs
+		a.state = state
+		a.stashes = stashes
 		a.rebuildCommitColors()
 		if len(a.commits) > 0 {
 			a.rebuildLayout()
@@ -121,7 +150,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		checkChanges := m.auto || a.verifyAfterRestore
 		if checkChanges && !a.loadingLog {
 			a.verifyAfterRestore = false
-			if m.status.OID != oldOID || m.status.Branch != oldBranch || !sameRefs(oldRefs, m.refs) {
+			if status.OID != oldOID || status.Branch != oldBranch || !sameRefs(oldRefs, refs) {
 				extra = tea.Batch(extra, a.reloadLogCmdPreserve())
 			}
 		}
@@ -181,13 +210,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmd, extra)
 
 	case opDoneMsg:
+		if m.id != a.opID || !a.busy {
+			return a, nil
+		}
 		a.busy = false
 		a.taskName = ""
 		a.opCancel = nil
 		if m.out != "" {
 			a.logLine(m.out)
 		}
-		if m.err != nil {
+		if errors.Is(m.err, context.Canceled) {
+			a.setToast(i18n.S("已取消", "cancelled"), false)
+		} else if m.err != nil {
 			msg := firstLine(m.err.Error())
 			lower := strings.ToLower(m.err.Error())
 			switch {
@@ -320,7 +354,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case compareMsg:
-		if a.overlay != overlayDetail || a.detail.kind != "compare" {
+		if a.overlay != overlayDetail || a.detail.kind != "compare" || m.gen != a.detailGen || m.key != a.detailKey {
 			return a, nil
 		}
 		a.detail.loading = false
@@ -335,7 +369,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case detailMsg:
-		if a.overlay != overlayDetail {
+		if a.overlay != overlayDetail || m.gen != a.detailGen || m.key != a.detailKey {
 			return a, nil
 		}
 		a.detail.loading = false
@@ -358,12 +392,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.gen != a.filesGen {
 			return a, nil
 		}
+		if m.err != nil {
+			a.content = detailModel{title: i18n.S("文件列表", "files"), err: firstLine(m.err.Error()), retry: "files"}
+			a.setToast(firstLine(m.err.Error()), true)
+			return a, nil
+		}
 		a.setFiles(m.files)
 		a.commitBody = m.detail.Body
 		a.commitAuthor = m.detail.Author
-		if m.err != nil {
-			a.setToast(firstLine(m.err.Error()), true)
-		}
 		if f := a.selectedFile(); f != nil {
 			return a, a.loadFileContent(*f, a.filesOwner == "work")
 		}
@@ -380,19 +416,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.content.loading = false
 		a.content.title = m.title
 		a.content.sha = m.sha
-		a.content.offset = 0
+		a.content.working = m.working
 		if m.err != nil {
 			a.content.err = firstLine(m.err.Error())
 			a.content.lines = nil
+			a.content.retry = "content"
 		} else {
 			a.content.err = ""
 			a.content.lines = buildPlainDiffLines(m.diff)
+			a.content.retry = ""
 		}
 		a.clampContentScroll()
 		return a, nil
 
 	case searchDoneMsg:
-		if m.gen != a.searchGen {
+		if m.gen != a.searchGen || m.query != a.searchQuery {
 			return a, nil
 		}
 		a.searching = false
@@ -453,7 +491,7 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case overlayDetail:
 		switch k.String() {
 		case "esc", "q":
-			a.overlay = overlayNone
+			a.closeDetail()
 		case "down":
 			a.detail.offset++
 		case "up":
@@ -485,9 +523,11 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return a, tea.Quit
 	case "esc":
-		if a.busy && a.opCancel != nil {
-			a.opCancel()
-			a.opCancel = nil
+		if a.busy {
+			if a.opCancel != nil {
+				a.opCancel()
+				a.opCancel = nil
+			}
 			a.setToast(i18n.S("已取消", "cancelled"), false)
 			return a, nil
 		}
@@ -495,6 +535,8 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.filter = ""
 		a.searchResults = nil
 		a.searchQuery = ""
+		a.searchGen++
+		a.searching = false
 		a.invalidateView()
 		a.clampSelection()
 		return a, nil
@@ -629,6 +671,9 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.moveToEdge(true)
 	}
 
+	if k.String() == "r" && a.pane == PaneContent && a.content.retry != "" {
+		return a, a.retryFileView()
+	}
 	if k.Type == tea.KeyRunes && (len(k.Runes) > 1 || k.Runes[0] > 127) {
 		a.setToast(i18n.S("浏览模式：中文输入法可能吞掉按键，请用方向键或切换英文输入法", "browsing mode: use arrow keys or switch to an English IME"), true)
 		return a, nil
@@ -903,6 +948,11 @@ func (a *App) moveToEdge(last bool) tea.Cmd {
 // handleInfoKey 处理提交信息区按键。
 func (a *App) handleInfoKey(k tea.KeyMsg) (tea.Cmd, bool) {
 	switch k.String() {
+	case "enter":
+		if c := a.selectedCommit(); c != nil && !a.onDirtyRow() {
+			return a.openCommitDetail(c.Hash), true
+		}
+		return nil, true
 	case "b":
 		a.openInfoHeaderMenu()
 		return nil, true
@@ -1224,7 +1274,7 @@ func (a *App) handleSidebarKey(k tea.KeyMsg) (tea.Cmd, bool) {
 	case " ":
 		if it != nil && it.kind == sideStash {
 			return a.runOp("stash apply", func(ctx context.Context) (string, error) {
-				return a.svc.StashApply(ctx, it.stash.Index)
+				return a.svc.StashApply(ctx, it.stash.Hash)
 			}), true
 		}
 		return a.sidebarSpace(it), true
@@ -1284,20 +1334,12 @@ func (a *App) sidebarEnter(it *sideItem) tea.Cmd {
 			return a.svc.Checkout(ctx, it.ref.Name)
 		})
 	case sideRemote:
-		local := remoteLocalName(it.ref.Name)
-		for _, r := range a.refs {
-			if r.Kind == git.RefLocal && r.Name == local {
-				return a.runOp("checkout "+local, func(ctx context.Context) (string, error) {
-					return a.svc.Checkout(ctx, local)
-				})
-			}
-		}
-		return a.runOp("checkout "+local, func(ctx context.Context) (string, error) {
-			return a.svc.CheckoutRemoteBranch(ctx, it.ref.Name, local)
+		return a.runOp("checkout "+it.ref.Name, func(ctx context.Context) (string, error) {
+			return a.svc.CheckoutRemoteBranch(ctx, refIdentity(it.ref))
 		})
 	case sideTag:
 		return a.runOp("checkout "+it.ref.Name, func(ctx context.Context) (string, error) {
-			return a.svc.Checkout(ctx, it.ref.Name)
+			return a.svc.Checkout(ctx, refIdentity(it.ref))
 		})
 	case sideStash:
 		return a.openStashDiff(it.stash)
@@ -1310,13 +1352,6 @@ func (a *App) sidebarEnter(it *sideItem) tea.Cmd {
 func fileTitle(it *sideItem) string {
 	label := it.file.Label(it.staged)
 	return label + " " + it.file.Path
-}
-
-func remoteLocalName(full string) string {
-	if i := strings.IndexByte(full, '/'); i >= 0 {
-		return full[i+1:]
-	}
-	return full
 }
 
 func (a *App) sidebarSpace(it *sideItem) tea.Cmd {
@@ -1365,15 +1400,12 @@ func (a *App) sidebarDelete(it *sideItem) tea.Cmd {
 			})
 		return nil
 	case sideRemote:
-		remote, branch := splitRemote(it.ref.Name)
-		if remote == "" {
-			return nil
-		}
+		ref := refIdentity(it.ref)
 		a.confirm(i18n.S("删除远端分支 "+it.ref.Name, "delete remote branch "+it.ref.Name),
 			i18n.S("将在远端仓库删除该分支。", "This deletes the branch on the remote."),
-			"git push "+remote+" --delete "+branch, true, func(a *App) tea.Cmd {
-				return a.runOp("push --delete "+branch, func(ctx context.Context) (string, error) {
-					return a.svc.DeleteRemoteBranch(ctx, remote, branch)
+			"git push --delete "+it.ref.Name, true, func(a *App) tea.Cmd {
+				return a.runOp("push --delete "+it.ref.Name, func(ctx context.Context) (string, error) {
+					return a.svc.DeleteRemoteBranch(ctx, ref)
 				})
 			})
 		return nil
@@ -1389,32 +1421,16 @@ func (a *App) sidebarDelete(it *sideItem) tea.Cmd {
 	case sideStash:
 		return a.stashAction(it.stash, "drop")
 	case sideFile:
-		path := it.file.Path
-		untracked := it.untracked
-		a.confirm(i18n.S("丢弃改动 "+path, "discard changes "+path),
-			i18n.S("将永久丢弃该文件的未提交改动，无法恢复。", "Uncommitted changes to this file will be lost permanently."),
-			discardCommand(path, untracked), true, func(a *App) tea.Cmd {
-				return a.runOp("discard "+path, func(ctx context.Context) (string, error) {
-					return a.svc.Discard(ctx, untracked, path)
-				})
-			})
-		return nil
+		return a.discardFilePrompt(fileEntry{
+			path:      it.file.Path,
+			origPath:  it.file.OrigPath,
+			status:    it.file.Label(it.staged),
+			staged:    it.staged,
+			untracked: it.untracked,
+			unmerged:  it.file.Unmerged,
+		})
 	}
 	return nil
-}
-
-func discardCommand(path string, untracked bool) string {
-	if untracked {
-		return "git clean -f -d -- " + path
-	}
-	return "git checkout -- " + path
-}
-
-func splitRemote(name string) (string, string) {
-	if i := strings.IndexByte(name, '/'); i > 0 {
-		return name[:i], name[i+1:]
-	}
-	return "", ""
 }
 
 func (a *App) stashAction(st git.Stash, action string) tea.Cmd {
@@ -1422,14 +1438,14 @@ func (a *App) stashAction(st git.Stash, action string) tea.Cmd {
 		a.confirm(i18n.S("删除 stash "+st.Selector, "drop stash "+st.Selector),
 			st.Subject, "git stash drop "+st.Selector, true, func(a *App) tea.Cmd {
 				return a.runOp("stash drop", func(ctx context.Context) (string, error) {
-					return a.svc.StashDrop(ctx, st.Index)
+					return a.svc.StashDrop(ctx, st.Hash)
 				})
 			})
 		return nil
 	}
 	if action == "pop" {
 		return a.runOp("stash pop", func(ctx context.Context) (string, error) {
-			return a.svc.StashPop(ctx, st.Index)
+			return a.svc.StashPop(ctx, st.Hash)
 		})
 	}
 	return nil
@@ -1452,7 +1468,7 @@ func (a *App) mergePrompt(ref git.Ref) {
 		i18n.S("冲突时会在顶部显示冲突态，可在 M 菜单继续或终止。", "On conflicts use the M menu to continue or abort."),
 		"git merge --no-edit "+ref.Name, false, func(a *App) tea.Cmd {
 			return a.runOp("merge "+ref.Name, func(ctx context.Context) (string, error) {
-				return a.svc.Merge(ctx, ref.Name)
+				return a.svc.Merge(ctx, refIdentity(ref))
 			})
 		})
 }
@@ -1462,7 +1478,7 @@ func (a *App) rebasePrompt(ref git.Ref) {
 		i18n.S("会改写当前分支历史。冲突时可在 M 菜单继续或终止。", "This rewrites current branch history. Use the M menu on conflicts."),
 		"git rebase "+ref.Name, true, func(a *App) tea.Cmd {
 			return a.runOp("rebase "+ref.Name, func(ctx context.Context) (string, error) {
-				return a.svc.Rebase(ctx, ref.Name)
+				return a.svc.Rebase(ctx, refIdentity(ref))
 			})
 		})
 }
@@ -1686,21 +1702,29 @@ func (a *App) pushTag(ref git.Ref) tea.Cmd {
 }
 
 func (a *App) runProgressOp(name string, fn func(ctx context.Context, progress func(string)) (string, error)) tea.Cmd {
+	if a.busy {
+		return a.busyToast()
+	}
 	a.busy = true
+	a.opID++
+	id := a.opID
 	a.taskName = name
 	msgs := a.msgs
+	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
+	a.opCancel = cancel
 	return tea.Batch(func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
-		defer cancel()
-		a.opCancel = cancel
 		progress := func(line string) {
 			select {
-			case msgs <- progressMsg{line: line}:
+			case msgs <- progressMsg{id: id, line: line}:
 			default:
 			}
 		}
 		out, err := fn(ctx, progress)
-		return opDoneMsg{name: name, out: out, err: err}
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		cancel()
+		return opDoneMsg{id: id, name: name, out: out, err: err}
 	}, spinnerTickCmd())
 }
 
@@ -1776,6 +1800,8 @@ func (a *App) openStateMenu() {
 // openSearchInline 进入行内搜索（`/`），结果实时展示在主列表。
 func (a *App) openSearchInline() {
 	a.clearCommitSelection()
+	a.searchGen++
+	a.searching = false
 	a.searchActive = true
 	a.searchResults = nil
 	a.searchQuery = ""
@@ -1793,6 +1819,8 @@ func (a *App) handleSearchKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.filter = ""
 		a.searchResults = nil
 		a.searchQuery = ""
+		a.searchGen++
+		a.searching = false
 		a.clearCommitSelection()
 		a.invalidateView()
 		a.graphSel, a.graphOff = 0, 0
@@ -1803,6 +1831,8 @@ func (a *App) handleSearchKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if q == "" {
 			a.filter = ""
 			a.searchResults = nil
+			a.searchGen++
+			a.searching = false
 			a.invalidateView()
 			return a, nil
 		}
