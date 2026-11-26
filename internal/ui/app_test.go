@@ -2442,7 +2442,7 @@ func TestProjectMenuUsesClickedProject(t *testing.T) {
 func TestFooterHintsRightAligned(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	a.toast = "已复制一段很长的提交信息用于测试底部截断"
+	a.toast = strings.Repeat("已复制一段很长的提交信息用于测试底部截断", 3)
 	v := ansi.Strip(a.viewFooter())
 	plain := strings.TrimRight(v, " ")
 	hint := strings.TrimRight(ansi.Strip(a.contextHints()), " ")

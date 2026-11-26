@@ -292,6 +292,7 @@ type App struct {
 
 	toast    string
 	toastErr bool
+	toastGen int
 	selHash  string
 	quit     bool
 
@@ -442,7 +443,11 @@ func (a *App) Msgs() <-chan tea.Msg { return a.msgs }
 
 // Init 启动首屏加载。
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.checkUpdateCmd(), a.loadProjectBranchesCmd(), a.loadWorktreesCmd(), autoRefreshTickCmd())
+	cmds := []tea.Cmd{a.refreshCmd(true), a.reloadLogCmd(), a.checkUpdateCmd(), a.loadProjectBranchesCmd(), a.loadWorktreesCmd(), autoRefreshTickCmd()}
+	if a.toast != "" {
+		cmds = append(cmds, toastExpireCmd(a.toastGen))
+	}
+	return tea.Batch(cmds...)
 }
 
 // 尺寸计算
@@ -1694,10 +1699,11 @@ func (a *App) logLine(s string) {
 	}
 }
 
-// setToast 设置状态栏消息。
+// setToast 设置状态栏消息；世代号用于让旧定时器失效。
 func (a *App) setToast(s string, isErr bool) {
 	a.toast = sanitize.Secrets(sanitize.Line(s))
 	a.toastErr = isErr
+	a.toastGen++
 }
 
 // textInput 创建单行输入框。

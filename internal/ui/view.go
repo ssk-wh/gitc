@@ -57,9 +57,6 @@ func (a *App) statusLine(width int) string {
 	if a.status.Ahead > 0 || a.status.Behind > 0 {
 		line += styleCyan.Render(fmt.Sprintf("  ↑%d ↓%d", a.status.Ahead, a.status.Behind))
 	}
-	if n := a.status.Total(); n > 0 {
-		line += styleWarn.Render(fmt.Sprintf("  ✱%d", n))
-	}
 	return truncate(line, width)
 }
 
@@ -351,9 +348,6 @@ func (a *App) viewHeader() string {
 	}
 	if a.status.Ahead > 0 || a.status.Behind > 0 {
 		parts = append(parts, styleCyan.Render(fmt.Sprintf("↑%d ↓%d", a.status.Ahead, a.status.Behind)))
-	}
-	if n := a.status.Total(); n > 0 {
-		parts = append(parts, styleWarn.Render(fmt.Sprintf("✱%d", n)))
 	}
 	if a.state.InProgress() {
 		parts = append(parts, styleBad.Bold(true).Render(strings.ToUpper(a.state.Kind)))
