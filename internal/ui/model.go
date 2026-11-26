@@ -181,6 +181,29 @@ type projectCache struct {
 	truncated    bool
 }
 
+// projectRow 是项目区树形视图中的一行。
+type projectRow struct {
+	project  projectEntry
+	worktree *git.Worktree // nil 表示项目节点
+}
+
+// projectRows 返回项目区的扁平树行（存在多个 worktree 且未折叠时展开子行）。
+func (a *App) projectRows() []projectRow {
+	var rows []projectRow
+	for _, p := range a.projects {
+		rows = append(rows, projectRow{project: p})
+		wts := a.worktrees[p.Path]
+		if len(wts) <= 1 || a.projectCollapsed[p.Path] {
+			continue
+		}
+		for i := range wts {
+			wt := wts[i]
+			rows = append(rows, projectRow{project: p, worktree: &wt})
+		}
+	}
+	return rows
+}
+
 // App 是根模型。
 type App struct {
 	svc    git.Service
@@ -271,39 +294,42 @@ type App struct {
 	lastClick    time.Time
 	lastClickKey string
 
-	leftW           int // 左栏宽度（0 表示默认）
-	leftTopH        int // 左侧分支区高度（0 表示默认比例）
-	leftMidH        int // 左侧改动区高度（0 表示默认比例）
-	infoOff         int
-	cmdH            int // 命令历史高度（0 表示默认）
-	changes         []fileEntry
-	changesTree     []*fileNode
-	changesRows     []fileRow
-	changesExpanded map[string]bool
-	changeSel       int
-	changeOff       int
-	commitAnchor    int // Ctrl 多选锚点（-1 表示未多选）
-	latestVersion   string
-	updateAvailable bool
-	updateBadgeX    int
-	updateBadgeW    int
-	updateHintOn    bool
-	tagMenuName     string
-	tagMenuModal    *modal
-	remoteTagCache  map[string]bool
-	projects        []projectEntry
-	projectSel      int
-	projectOff      int
-	projectBranch   map[string]string
-	projectCache    map[string]*projectCache
-	logPreserve     bool
-	currentPath     string
-	openRepo        func(string) (git.Service, error)
-	pickDir         func() (string, error)
-	drawerLeftW     int // 抽屉文件列宽度（0 表示默认比例）
-	rightTopH       int // 提交区高度（0 表示默认比例）
-	dragMode        int // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线
-	collapsed       map[string]bool
+	leftW              int // 左栏宽度（0 表示默认）
+	leftTopH           int // 左侧分支区高度（0 表示默认比例）
+	leftMidH           int // 左侧改动区高度（0 表示默认比例）
+	infoOff            int
+	cmdH               int // 命令历史高度（0 表示默认）
+	changes            []fileEntry
+	changesTree        []*fileNode
+	changesRows        []fileRow
+	changesExpanded    map[string]bool
+	changeSel          int
+	changeOff          int
+	commitAnchor       int // Ctrl 多选锚点（-1 表示未多选）
+	latestVersion      string
+	updateAvailable    bool
+	updateBadgeX       int
+	updateBadgeW       int
+	updateHintOn       bool
+	tagMenuName        string
+	tagMenuModal       *modal
+	remoteTagCache     map[string]bool
+	projects           []projectEntry
+	projectSel         int
+	projectOff         int
+	projectBranch      map[string]string
+	projectCache       map[string]*projectCache
+	worktrees          map[string][]git.Worktree
+	projectCollapsed   map[string]bool
+	currentProjectPath string
+	logPreserve        bool
+	currentPath        string
+	openRepo           func(string) (git.Service, error)
+	pickDir            func() (string, error)
+	drawerLeftW        int // 抽屉文件列宽度（0 表示默认比例）
+	rightTopH          int // 提交区高度（0 表示默认比例）
+	dragMode           int // 0 无 / 1 左分隔线 / 2 横向分隔线 / 3 抽屉纵向分隔线
+	collapsed          map[string]bool
 
 	branchFilter      string
 	branchFilterScope string // "local"/"remote" 表示按本地/远端分组筛选
@@ -374,27 +400,30 @@ func (a *App) ProjectPaths() []string {
 // New 创建应用。
 func New(svc git.Service) *App {
 	a := &App{
-		svc:             svc,
-		builder:         graph.NewBuilder(),
-		msgs:            make(chan tea.Msg, 256),
-		pane:            PaneCommits,
-		collapsed:       map[string]bool{},
-		themeName:       "default",
-		expanded:        map[string]bool{},
-		commitColor:     map[string]int{},
-		branchColor:     map[string]int{},
-		commitAnchor:    -1,
-		remoteTagCache:  map[string]bool{},
-		projectBranch:   map[string]string{},
-		projectCache:    map[string]*projectCache{},
-		openRepo:        func(path string) (git.Service, error) { return git.Open(path) },
-		pickDir:         platform.PickDirectory,
-		changesExpanded: map[string]bool{},
+		svc:              svc,
+		builder:          graph.NewBuilder(),
+		msgs:             make(chan tea.Msg, 256),
+		pane:             PaneCommits,
+		collapsed:        map[string]bool{},
+		themeName:        "default",
+		expanded:         map[string]bool{},
+		commitColor:      map[string]int{},
+		branchColor:      map[string]int{},
+		commitAnchor:     -1,
+		remoteTagCache:   map[string]bool{},
+		projectBranch:    map[string]string{},
+		projectCache:     map[string]*projectCache{},
+		worktrees:        map[string][]git.Worktree{},
+		projectCollapsed: map[string]bool{},
+		openRepo:         func(path string) (git.Service, error) { return git.Open(path) },
+		pickDir:          platform.PickDirectory,
+		changesExpanded:  map[string]bool{},
 	}
 	a.layout = a.builder.Layout()
 	if cur := cleanProjectPath(svc.RootPath()); cur != "" {
 		a.projects = []projectEntry{{Name: filepath.Base(cur), Path: cur}}
 		a.currentPath = cur
+		a.currentProjectPath = cur
 	}
 	a.toast = i18n.S("按 ? 查看帮助", "press ? for help")
 	return a
@@ -405,7 +434,7 @@ func (a *App) Msgs() <-chan tea.Msg { return a.msgs }
 
 // Init 启动首屏加载。
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.checkUpdateCmd(), a.loadProjectBranchesCmd())
+	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.checkUpdateCmd(), a.loadProjectBranchesCmd(), a.loadWorktreesCmd())
 }
 
 // 尺寸计算
@@ -1097,13 +1126,13 @@ func (a *App) panelLayout() panelLayout {
 	if drawerH < 3 {
 		drawerH = 3
 	}
-	// 左上角项目区：每个项目 1 行，最多 4 行
-	projH := len(a.projects) + 2
+	// 左上角项目区：项目 + 展开的 worktree，最多 8 行
+	projH := len(a.projectRows()) + 2
 	if projH < 3 {
 		projH = 3
 	}
-	if projH > 6 {
-		projH = 6
+	if projH > 10 {
+		projH = 10
 	}
 	avail := bodyH - projH - 1
 	// 左侧分支 + 提交信息；提交信息默认高度与文件区（抽屉）一致
@@ -1257,42 +1286,36 @@ func (a *App) nextPane(delta int) {
 }
 
 // altFocus 处理 Alt+方向键的区域切换。
-// 布局分左右两部分：各自按“从上到下、同一行从左到右”的顺序移动。
+// 上/下按空间行移动；文件与内容同排时用左/右切换，日志区在其下方。
 func (a *App) altFocus(dir string) {
 	if !a.panelLayout().split {
 		return
 	}
-	leftOrder := []Pane{PaneProjects, PaneBranches, PaneInfo}
-	rightOrder := []Pane{PaneCommits, PaneFiles, PaneContent}
-	if len(a.commands) > 0 {
-		rightOrder = append(rightOrder, PaneLog)
-	}
-	indexIn := func(order []Pane) int {
-		for i, p := range order {
-			if p == a.pane {
-				return i
-			}
-		}
-		return -1
-	}
+	hasLog := len(a.commands) > 0
 	switch dir {
-	case "up", "down":
-		order := leftOrder
-		idx := indexIn(leftOrder)
-		if idx < 0 {
-			order = rightOrder
-			idx = indexIn(rightOrder)
+	case "up":
+		switch a.pane {
+		case PaneInfo:
+			a.pane = PaneBranches
+		case PaneBranches:
+			a.pane = PaneProjects
+		case PaneFiles, PaneContent:
+			a.pane = PaneCommits
+		case PaneLog:
+			a.pane = PaneFiles
 		}
-		if idx < 0 {
-			return
-		}
-		if dir == "down" {
-			idx++
-		} else {
-			idx--
-		}
-		if idx >= 0 && idx < len(order) {
-			a.pane = order[idx]
+	case "down":
+		switch a.pane {
+		case PaneProjects:
+			a.pane = PaneBranches
+		case PaneBranches:
+			a.pane = PaneInfo
+		case PaneCommits:
+			a.pane = PaneFiles
+		case PaneFiles, PaneContent:
+			if hasLog {
+				a.pane = PaneLog
+			}
 		}
 	case "left":
 		switch a.pane {
@@ -1351,12 +1374,13 @@ func (a *App) projectViewHeight() int {
 
 // ensureProjectVisible 修正项目区滚动。
 func (a *App) ensureProjectVisible() {
-	if len(a.projects) == 0 {
+	rows := a.projectRows()
+	if len(rows) == 0 {
 		a.projectSel, a.projectOff = 0, 0
 		return
 	}
-	if a.projectSel >= len(a.projects) {
-		a.projectSel = len(a.projects) - 1
+	if a.projectSel >= len(rows) {
+		a.projectSel = len(rows) - 1
 	}
 	if a.projectSel < 0 {
 		a.projectSel = 0

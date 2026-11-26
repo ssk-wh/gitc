@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -349,6 +350,9 @@ func panelHeader(title string, width int, focused bool) string {
 
 // projectBranchOf 返回项目的当前分支（未加载完成时显示省略号）。
 func (a *App) projectBranchOf(p projectEntry) string {
+	if wts := a.worktrees[p.Path]; len(wts) > 0 && wts[0].Branch != "" {
+		return wts[0].Branch
+	}
 	if p.Path == a.currentPath {
 		if a.status.Detached {
 			return i18n.S("分离 HEAD", "detached")
@@ -363,31 +367,88 @@ func (a *App) projectBranchOf(p projectEntry) string {
 	return "…"
 }
 
-// viewProjectsPanel 渲染左上角项目区：项目名与分支两列对齐。
+// worktreeBranch 返回 worktree 的分支显示名。
+func worktreeBranch(wt git.Worktree) string {
+	if wt.Detached {
+		return i18n.S("分离 HEAD", "detached")
+	}
+	if wt.Branch != "" {
+		return wt.Branch
+	}
+	return "…"
+}
+
+// worktreeLabel 返回 worktree 在树中的名称。
+func worktreeLabel(wt git.Worktree) string {
+	if wt.Main {
+		return i18n.S("main", "main")
+	}
+	if base := filepath.Base(filepath.Clean(wt.Path)); base != "" && base != "." {
+		return base
+	}
+	return wt.Path
+}
+
+// viewProjectsPanel 渲染左上角项目区：项目树 + “名称/分支”两列对齐。
 func (a *App) viewProjectsPanel(width, height int) string {
 	header := panelHeader(i18n.S("项目", "PROJECTS"), width, a.pane == PaneProjects)
 	if height <= 1 {
 		return header
 	}
+	rows := a.projectRows()
 	avail := height - 1
-	if a.projectSel >= len(a.projects) {
-		a.projectSel = len(a.projects) - 1
-	}
-	if a.projectSel < 0 {
-		a.projectSel = 0
-	}
-	if a.projectSel < a.projectOff {
-		a.projectOff = a.projectSel
-	}
-	if a.projectSel >= a.projectOff+avail {
-		a.projectOff = a.projectSel - avail + 1
+	if len(rows) == 0 {
+		a.projectSel, a.projectOff = 0, 0
+	} else {
+		if a.projectSel >= len(rows) {
+			a.projectSel = len(rows) - 1
+		}
+		if a.projectSel < 0 {
+			a.projectSel = 0
+		}
+		if a.projectSel < a.projectOff {
+			a.projectOff = a.projectSel
+		}
+		if a.projectSel >= a.projectOff+avail {
+			a.projectOff = a.projectSel - avail + 1
+		}
 	}
 	if a.projectOff < 0 {
 		a.projectOff = 0
 	}
+	type rendered struct {
+		label  string
+		branch string
+		style  lipgloss.Style
+	}
+	var rowsOut []rendered
+	for _, r := range rows {
+		label := ""
+		if r.worktree == nil {
+			hasChildren := len(a.worktrees[r.project.Path]) > 1
+			arrow := "  "
+			if hasChildren {
+				if a.projectCollapsed[r.project.Path] {
+					arrow = "▸ "
+				} else {
+					arrow = "▾ "
+				}
+			}
+			label = arrow + r.project.Name
+		} else {
+			label = "  └ " + worktreeLabel(*r.worktree)
+		}
+		branch := ""
+		if r.worktree != nil {
+			branch = worktreeBranch(*r.worktree)
+		} else {
+			branch = a.projectBranchOf(r.project)
+		}
+		rowsOut = append(rowsOut, rendered{label: label, branch: sanitize.Line(branch)})
+	}
 	nameCol := 0
-	for _, p := range a.projects {
-		if w := strWidth(p.Name); w > nameCol {
+	for _, r := range rowsOut {
+		if w := strWidth(r.label); w > nameCol {
 			nameCol = w
 		}
 	}
@@ -399,29 +460,32 @@ func (a *App) viewProjectsPanel(width, height int) string {
 	}
 	out := []string{header}
 	end := a.projectOff + avail
-	if end > len(a.projects) {
-		end = len(a.projects)
-	}
-	if len(a.projects) == 0 {
-		out = append(out, styleDim.Render(i18n.S("  （没有项目）", "  (no projects)")))
+	if end > len(rowsOut) {
+		end = len(rowsOut)
 	}
 	for i := a.projectOff; i < end; i++ {
-		p := a.projects[i]
+		r := rowsOut[i]
 		marker := "  "
-		style := styleAccent
-		if a.pane == PaneProjects && i == a.projectSel {
+		style := lipgloss.NewStyle().Foreground(colorFg)
+		selected := a.pane == PaneProjects && i == a.projectSel
+		if selected {
 			marker = "› "
 			style = styleSel
 		}
 		cur := "  "
-		if p.Path == a.currentPath {
+		isCurrent := false
+		if rows[i].worktree == nil {
+			isCurrent = rows[i].project.Path == a.currentProjectPath && a.currentPath == rows[i].project.Path
+		} else {
+			isCurrent = rows[i].worktree.Path == a.currentPath
+		}
+		if isCurrent {
 			cur = "* "
-			if a.pane != PaneProjects || i != a.projectSel {
+			if !selected {
 				style = styleGood
 			}
 		}
-		name := padRight(p.Name, nameCol)
-		line := marker + cur + name + "  " + sanitize.Line(a.projectBranchOf(p))
+		line := marker + cur + padRight(r.label, nameCol) + "  " + r.branch
 		out = append(out, truncate(style.Render(line), width))
 	}
 	for len(out) < height {
@@ -1415,7 +1479,7 @@ func helpLines() []string {
 		{"M", i18n.S("冲突态 continue / abort", "resolve merge/rebase: continue / abort")},
 		{"T", i18n.S("切换主题（default/light/ocean/forest/fire/rose/high-contrast）", "cycle theme")},
 		{"L / R / ?", i18n.S("命令日志 / 刷新 / 帮助", "command log / refresh / help")},
-		{"右键项目区标题", i18n.S("添加项目 / 切换项目（系统目录选择框）", "add/switch projects (system directory picker)")},
+		{"右键项目区标题", i18n.S("添加项目 / 切换项目 / 新建 worktree（系统目录选择框）", "add/switch projects / new worktree (system picker)")},
 		{"q / Ctrl+C", i18n.S("退出", "quit")},
 	}
 	// 顶部独立区域：项目与 GitHub 信息

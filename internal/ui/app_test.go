@@ -1148,16 +1148,25 @@ func TestTabAndAltFocus(t *testing.T) {
 		t.Fatalf("提交 alt+down = %v, 期望文件区", a.pane)
 	}
 	sendKey(a, tea.KeyMsg{Type: tea.KeyDown, Alt: true})
-	if a.pane != PaneContent {
-		t.Fatalf("文件 alt+down = %v, 期望内容区", a.pane)
-	}
-	sendKey(a, tea.KeyMsg{Type: tea.KeyDown, Alt: true})
 	if a.pane != PaneLog {
-		t.Fatalf("内容 alt+down = %v, 期望命令区", a.pane)
+		t.Fatalf("文件 alt+down = %v, 期望命令区", a.pane)
 	}
 	sendKey(a, tea.KeyMsg{Type: tea.KeyUp, Alt: true})
+	if a.pane != PaneFiles {
+		t.Fatalf("命令 alt+up = %v, 期望文件区", a.pane)
+	}
+	sendKey(a, tea.KeyMsg{Type: tea.KeyRight, Alt: true})
 	if a.pane != PaneContent {
-		t.Fatalf("命令 alt+up = %v, 期望内容区", a.pane)
+		t.Fatalf("文件 alt+right = %v, 期望内容区", a.pane)
+	}
+	sendKey(a, tea.KeyMsg{Type: tea.KeyUp, Alt: true})
+	if a.pane != PaneCommits {
+		t.Fatalf("内容 alt+up = %v, 期望提交区（不是同排左边）", a.pane)
+	}
+	sendKey(a, tea.KeyMsg{Type: tea.KeyDown, Alt: true})
+	sendKey(a, tea.KeyMsg{Type: tea.KeyRight, Alt: true})
+	if a.pane != PaneContent {
+		t.Fatalf("提交/文件 alt 序列 = %v", a.pane)
 	}
 	sendKey(a, tea.KeyMsg{Type: tea.KeyLeft, Alt: true})
 	if a.pane != PaneFiles {
@@ -2381,6 +2390,8 @@ func TestWorkspaceStartupAndAdd(t *testing.T) {
 	}
 	a, _ := newFakeApp(t)
 	a.svc = &fakeSvc{root: root}
+	a.currentPath = cleanProjectPath(root)
+	a.currentProjectPath = cleanProjectPath(root)
 	a.SetConfig(config.File{})
 	if a.projectIndex(cleanProjectPath(other)) < 0 {
 		t.Fatalf("未读取 workspace 项目: %+v", a.projects)
@@ -2466,11 +2477,11 @@ func TestAltFocusLayoutOrder(t *testing.T) {
 		{PaneProjects, "up", PaneProjects},
 
 		{PaneCommits, "down", PaneFiles},
-		{PaneFiles, "down", PaneContent},
+		{PaneFiles, "down", PaneLog},
 		{PaneContent, "down", PaneLog},
 		{PaneLog, "down", PaneLog},
-		{PaneLog, "up", PaneContent},
-		{PaneContent, "up", PaneFiles},
+		{PaneLog, "up", PaneFiles},
+		{PaneContent, "up", PaneCommits},
 		{PaneFiles, "up", PaneCommits},
 		{PaneCommits, "up", PaneCommits},
 
@@ -2493,10 +2504,12 @@ func TestAltFocusLayoutOrder(t *testing.T) {
 	}
 	// 无命令历史时不进入隐藏的命令区
 	a.commands = nil
-	a.pane = PaneContent
-	a.altFocus("down")
-	if a.pane != PaneContent {
-		t.Errorf("命令区隐藏时 Content Alt+Down = %v", a.pane)
+	for _, p := range []Pane{PaneFiles, PaneContent} {
+		a.pane = p
+		a.altFocus("down")
+		if a.pane != p {
+			t.Errorf("命令区隐藏时 %v Alt+Down = %v", p, a.pane)
+		}
 	}
 }
 
@@ -2601,5 +2614,104 @@ func TestProjectCacheRestore(t *testing.T) {
 	a.Update(switchReloadMsg{path: a.currentPath})
 	if len(a.commits) == 0 || !a.logPreserve {
 		t.Fatalf("后台刷新过早清空缓存: commits=%d preserve=%v", len(a.commits), a.logPreserve)
+	}
+}
+
+// TestFileMenuIgnore 未跟踪文件菜单提供添加到 .gitignore。
+func TestFileMenuIgnore(t *testing.T) {
+	a, _ := newFakeApp(t)
+	n := &fileNode{name: "new.txt", path: "new.txt", entries: []fileEntry{{path: "new.txt", untracked: true}}}
+	found := false
+	for _, c := range a.fileNodeMenuChoices(n, true) {
+		if strings.Contains(c.label, ".gitignore") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("未跟踪文件缺少忽略菜单: %+v", a.fileNodeMenuChoices(n, true))
+	}
+	tracked := &fileNode{name: "a.txt", path: "a.txt", entries: []fileEntry{{path: "a.txt"}}}
+	for _, c := range a.fileNodeMenuChoices(tracked, true) {
+		if strings.Contains(c.label, ".gitignore") {
+			t.Fatal("已跟踪文件不应显示忽略菜单")
+		}
+	}
+}
+
+// TestProjectRowsWorktrees 存在多个 worktree 时默认展开，可折叠。
+func TestProjectRowsWorktrees(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := t.TempDir()
+	a.SetProjects([]string{root}, root)
+	wt := t.TempDir()
+	a.worktrees[cleanProjectPath(root)] = []git.Worktree{
+		{Path: cleanProjectPath(root), Branch: "main", Main: true},
+		{Path: cleanProjectPath(wt), Branch: "wt-branch"},
+	}
+	rows := a.projectRows()
+	if len(rows) != 3 {
+		t.Fatalf("树行数 = %d，期望 3: %+v", len(rows), rows)
+	}
+	if rows[1].worktree == nil || rows[2].worktree == nil {
+		t.Fatal("worktree 子行缺失")
+	}
+	a.projectCollapsed[cleanProjectPath(root)] = true
+	if rows := a.projectRows(); len(rows) != 1 {
+		t.Fatalf("折叠后行数 = %d", len(rows))
+	}
+}
+
+// TestSwitchToWorktree 选中 worktree 后切换到其目录并保留主项目。
+func TestSwitchToWorktree(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root, wt := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.currentPath = cleanProjectPath(root)
+	a.currentProjectPath = cleanProjectPath(root)
+	a.worktrees[cleanProjectPath(root)] = []git.Worktree{
+		{Path: cleanProjectPath(root), Branch: "main", Main: true},
+		{Path: cleanProjectPath(wt), Branch: "wt-branch"},
+	}
+	next := &fakeSvc{root: wt, status: git.Status{Branch: "wt-branch"}}
+	a.openRepo = func(p string) (git.Service, error) { return next, nil }
+	cmd := a.switchToWorktree(cleanProjectPath(root), cleanProjectPath(wt))
+	if cmd == nil {
+		t.Fatal("切换 worktree 未返回命令")
+	}
+	if a.svc != next || a.currentPath != cleanProjectPath(wt) {
+		t.Fatalf("未切换到 worktree: path=%q", a.currentPath)
+	}
+	if a.currentProjectPath != cleanProjectPath(root) {
+		t.Fatalf("主项目路径 = %q", a.currentProjectPath)
+	}
+	rows := a.projectRows()
+	if a.projectSel >= len(rows) || rows[a.projectSel].worktree == nil || rows[a.projectSel].worktree.Path != cleanProjectPath(wt) {
+		t.Fatalf("项目区未选中 worktree: sel=%d rows=%+v", a.projectSel, rows)
+	}
+}
+
+// TestWorktreeMenu 主 worktree 不能移除，子 worktree 提供切换/移除。
+func TestWorktreeMenu(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root, wt := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.openWorktreeMenu(cleanProjectPath(root), git.Worktree{Path: cleanProjectPath(root), Main: true})
+	if a.modal == nil {
+		t.Fatal("worktree 菜单未打开")
+	}
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "移除 worktree") {
+			t.Fatal("主 worktree 不应提供移除")
+		}
+	}
+	a.openWorktreeMenu(cleanProjectPath(root), git.Worktree{Path: cleanProjectPath(wt)})
+	found := false
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "移除 worktree") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("子 worktree 缺少移除项: %+v", a.modal.choices)
 	}
 }

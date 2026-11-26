@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -213,6 +215,127 @@ func (r *Repo) Commit(ctx context.Context, message string, amend bool) (string, 
 	}
 	args = append(args, "-F", "-")
 	return r.runInput(ctx, message, args...)
+}
+
+// Ignore 把一个未跟踪路径加入仓库根目录的 .gitignore。
+func (r *Repo) Ignore(ctx context.Context, path string) (string, error) {
+	rel := filepath.ToSlash(strings.TrimSpace(path))
+	trailing := ""
+	if strings.HasSuffix(rel, "/") {
+		rel = strings.TrimSuffix(rel, "/")
+		trailing = "/"
+	}
+	if rel == "" {
+		return "", errors.New("路径不能为空")
+	}
+	escape := func(s string) string {
+		var b strings.Builder
+		for _, ch := range s {
+			switch ch {
+			case '\\', '*', '?', '[', ']', ' ', '#', '!':
+				b.WriteByte('\\')
+			}
+			b.WriteRune(ch)
+		}
+		return b.String()
+	}
+	pattern := "/" + escape(rel) + trailing
+	file := filepath.Join(r.Root, ".gitignore")
+	data, err := os.ReadFile(file)
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	for _, line := range strings.Split(string(data), string(rune(10))) {
+		if strings.TrimSpace(line) == pattern {
+			return "已在 .gitignore 中: " + pattern, nil
+		}
+	}
+	content := string(data)
+	if content != "" && !strings.HasSuffix(content, string(rune(10))) {
+		content += string(rune(10))
+	}
+	content += pattern + string(rune(10))
+	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+		return "", err
+	}
+	return "已添加到 .gitignore: " + pattern, nil
+}
+
+// Worktree 是一个 git worktree。
+type Worktree struct {
+	Path     string
+	Head     string
+	Branch   string
+	Bare     bool
+	Detached bool
+	Locked   bool
+	Prunable bool
+	Main     bool
+}
+
+// Worktrees 读取当前仓库的 worktree 列表（第一个为主 worktree）。
+func (r *Repo) Worktrees(ctx context.Context) ([]Worktree, error) {
+	out, err := r.run(ctx, true, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var list []Worktree
+	var cur *Worktree
+	flush := func() {
+		if cur != nil && cur.Path != "" {
+			list = append(list, *cur)
+			cur = nil
+		}
+	}
+	for _, line := range strings.Split(out, string(rune(10))) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			flush()
+			continue
+		}
+		if strings.HasPrefix(line, "worktree ") {
+			flush()
+			cur = &Worktree{Path: strings.TrimPrefix(line, "worktree ")}
+			continue
+		}
+		if cur == nil {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "HEAD "):
+			cur.Head = strings.TrimPrefix(line, "HEAD ")
+		case strings.HasPrefix(line, "branch "):
+			cur.Branch = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
+		case line == "bare":
+			cur.Bare = true
+		case line == "detached":
+			cur.Detached = true
+		case strings.HasPrefix(line, "locked"):
+			cur.Locked = true
+		case strings.HasPrefix(line, "prunable"):
+			cur.Prunable = true
+		}
+	}
+	flush()
+	if len(list) > 0 {
+		list[0].Main = true
+	}
+	return list, nil
+}
+
+// AddWorktree 新建分支并添加 worktree。
+func (r *Repo) AddWorktree(ctx context.Context, path, branch string) (string, error) {
+	return r.run(ctx, false, "worktree", "add", "-b", branch, path)
+}
+
+// RemoveWorktree 移除 worktree；force 会丢弃其中未提交改动。
+func (r *Repo) RemoveWorktree(ctx context.Context, path string, force bool) (string, error) {
+	args := []string{"worktree", "remove"}
+	if force {
+		args = append(args, "--force")
+	}
+	args = append(args, path)
+	return r.run(ctx, false, args...)
 }
 
 // CommitMessage 读取提交的完整原始信息（%B）。

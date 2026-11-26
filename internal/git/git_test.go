@@ -536,3 +536,74 @@ func TestEditCommitMessage(t *testing.T) {
 		t.Fatalf("HEAD 信息 = %q", got)
 	}
 }
+
+func TestWorktrees(t *testing.T) {
+	_, dir := newTestRepo(t)
+	r := mustRepo(t, dir)
+	commitFile(t, dir, "a.txt", "1", "first")
+	ctx := context.Background()
+	if _, err := r.AddWorktree(ctx, filepath.Join(t.TempDir(), "wt1"), "wt-branch"); err != nil {
+		t.Fatalf("AddWorktree: %v", err)
+	}
+	wts, err := r.Worktrees(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 2 {
+		t.Fatalf("worktree 数 = %d: %+v", len(wts), wts)
+	}
+	if !wts[0].Main {
+		t.Errorf("第一个应为主 worktree: %+v", wts[0])
+	}
+	found := false
+	for _, wt := range wts {
+		if wt.Branch == "wt-branch" {
+			found = true
+			if wt.Path == "" || wt.Head == "" {
+				t.Errorf("worktree 字段缺失: %+v", wt)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("未找到新建 worktree: %+v", wts)
+	}
+	if _, err := r.RemoveWorktree(ctx, wts[1].Path, true); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
+	}
+	wts, err = r.Worktrees(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 1 {
+		t.Fatalf("移除后 worktree 数 = %d", len(wts))
+	}
+}
+
+func TestIgnorePath(t *testing.T) {
+	_, dir := newTestRepo(t)
+	r := mustRepo(t, dir)
+	writeFile(t, dir, "build/out.txt", "x")
+	ctx := context.Background()
+	out, err := r.Ignore(ctx, "build/out.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "/build/out.txt") {
+		t.Errorf("输出 = %q", out)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "/build/out.txt") {
+		t.Errorf(".gitignore = %q", data)
+	}
+	// 重复添加不产生重复行
+	if _, err := r.Ignore(ctx, "build/out.txt"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if strings.Count(string(data), "/build/out.txt") != 1 {
+		t.Errorf("重复写入: %q", data)
+	}
+}

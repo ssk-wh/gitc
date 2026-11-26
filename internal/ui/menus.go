@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,7 +18,17 @@ import (
 func (a *App) openContextMenu() tea.Cmd {
 	switch a.pane {
 	case PaneProjects:
-		a.openProjectMenu(-1)
+		rows := a.projectRows()
+		if a.projectSel >= 0 && a.projectSel < len(rows) {
+			r := rows[a.projectSel]
+			if r.worktree != nil {
+				a.openWorktreeMenu(r.project.Path, *r.worktree)
+			} else {
+				a.openProjectMenu(a.projectIndex(r.project.Path))
+			}
+		} else {
+			a.openProjectMenu(-1)
+		}
 	case PaneBranches:
 		it := a.selectedSideItem()
 		if it == nil {
@@ -373,9 +384,12 @@ func (a *App) fileNodeMenuChoices(n *fileNode, working bool) []choice {
 	if n == nil || !working {
 		return nil
 	}
-	var hasStaged, hasUnstaged bool
+	var hasStaged, hasUnstaged, untracked bool
 	var pick fileEntry
 	for _, e := range n.entries {
+		if e.untracked {
+			untracked = true
+		}
 		if e.staged {
 			hasStaged = true
 		} else if !hasUnstaged {
@@ -405,6 +419,14 @@ func (a *App) fileNodeMenuChoices(n *fileNode, working bool) []choice {
 	if len(n.entries) > 0 {
 		out = append(out, choice{label: i18n.S("丢弃改动（危险）", "discard changes"), action: func(a *App) tea.Cmd {
 			return a.discardFilePrompt(pick)
+		}})
+	}
+	if untracked {
+		name := path
+		out = append(out, choice{label: i18n.S("添加到 .gitignore", "add to .gitignore"), action: func(a *App) tea.Cmd {
+			return a.runOp("ignore "+name, func(ctx context.Context) (string, error) {
+				return a.svc.Ignore(ctx, name)
+			})
 		}})
 	}
 	return out
@@ -712,13 +734,111 @@ func (a *App) openProjectMenu(focus int) {
 			return a.switchProject(a.projectIndex(p.Path))
 		}})
 	}
-	if focus >= 0 && a.projects[focus].Path != a.currentPath {
+	if focus >= 0 {
 		p := a.projects[focus]
-		choices = append(choices, choice{label: i18n.S("移除项目 "+p.Name, "remove project "+p.Name), action: func(a *App) tea.Cmd {
-			return a.removeProject(p)
+		if len(a.worktrees[p.Path]) > 1 {
+			expanded := !a.projectCollapsed[p.Path]
+			label := i18n.S("展开 worktree", "expand worktrees")
+			if expanded {
+				label = i18n.S("折叠 worktree", "collapse worktrees")
+			}
+			choices = append(choices, choice{label: label, action: func(a *App) tea.Cmd {
+				a.projectCollapsed[p.Path] = expanded
+				a.ensureProjectVisible()
+				return nil
+			}})
+		}
+		choices = append(choices, choice{label: i18n.S("新建 worktree…", "new worktree..."), action: func(a *App) tea.Cmd {
+			a.newWorktreePrompt(p)
+			return nil
 		}})
+		if p.Path != a.currentPath {
+			choices = append(choices, choice{label: i18n.S("移除项目 "+p.Name, "remove project "+p.Name), action: func(a *App) tea.Cmd {
+				return a.removeProject(p)
+			}})
+		}
 	}
 	a.choose(title, choices)
+}
+
+// openWorktreeMenu 是项目区 worktree 子行的右键菜单。
+func (a *App) openWorktreeMenu(projectPath string, wt git.Worktree) {
+	choices := []choice{}
+	if wt.Path != a.currentPath {
+		choices = append(choices, choice{label: i18n.S("切换到此 worktree", "switch to this worktree"), action: func(a *App) tea.Cmd {
+			return a.switchToWorktree(projectPath, wt.Path)
+		}})
+	}
+	if p := a.projectByPath(projectPath); p != nil {
+		p := *p
+		choices = append(choices,
+			choice{label: i18n.S("新建 worktree…", "new worktree..."), action: func(a *App) tea.Cmd {
+				a.newWorktreePrompt(p)
+				return nil
+			}},
+		)
+	}
+	if !wt.Main && wt.Path != a.currentPath {
+		path := wt.Path
+		choices = append(choices, choice{label: i18n.S("移除 worktree（危险）", "remove worktree (dangerous)"), action: func(a *App) tea.Cmd {
+			a.confirm(i18n.S("移除 worktree "+filepath.Base(path), "remove worktree "+filepath.Base(path)),
+				i18n.S("会删除该工作树目录及其中未提交改动。", "Deletes the worktree directory and its uncommitted changes."),
+				"git worktree remove --force "+path, true, func(a *App) tea.Cmd {
+					return a.runOp("remove worktree "+filepath.Base(path), func(ctx context.Context) (string, error) {
+						baseSvc, err := a.openRepo(projectPath)
+						if err != nil {
+							return "", err
+						}
+						return baseSvc.RemoveWorktree(ctx, path, true)
+					})
+				})
+			return nil
+		}})
+	}
+	choices = append(choices, choice{label: i18n.S("复制路径", "copy path"), action: func(a *App) tea.Cmd {
+		return a.copyToClipboard(wt.Path)
+	}})
+	a.choose(i18n.S("worktree "+worktreeLabel(wt), "worktree "+worktreeLabel(wt)), choices)
+}
+
+// projectByPath 返回路径对应的项目。
+func (a *App) projectByPath(path string) *projectEntry {
+	for i := range a.projects {
+		if a.projects[i].Path == path {
+			return &a.projects[i]
+		}
+	}
+	return nil
+}
+
+// newWorktreePrompt 输入路径与新分支名创建 worktree。
+func (a *App) newWorktreePrompt(p projectEntry) {
+	base := filepath.Join(filepath.Dir(p.Path), p.Name+"-wt")
+	branch := "wt/" + strings.ReplaceAll(p.Name, " ", "-")
+	a.promptText(i18n.S("新建 worktree：第一行路径，第二行新分支（Ctrl+S 创建）", "new worktree: path on line 1, new branch on line 2 (Ctrl+S creates)"), "", base+string(rune(10))+branch, func(a *App, v string) tea.Cmd {
+		nl := string(rune(10))
+		parts := strings.SplitN(strings.ReplaceAll(v, string(rune(13))+nl, nl), nl, 2)
+		path := strings.TrimSpace(parts[0])
+		branch := ""
+		if len(parts) > 1 {
+			branch = strings.TrimSpace(parts[1])
+		}
+		if path == "" || branch == "" {
+			a.setToast(i18n.S("worktree 路径和分支名都不能为空", "worktree path and branch are required"), true)
+			return nil
+		}
+		baseSvc, err := a.openRepo(p.Path)
+		if err != nil {
+			a.setToast(i18n.S("打开项目失败: ", "open project failed: ")+firstLine(err.Error()), true)
+			return nil
+		}
+		return a.runOp("worktree add", func(ctx context.Context) (string, error) {
+			return baseSvc.AddWorktree(ctx, path, branch)
+		})
+	})
+	if a.modal != nil && a.modal.kind == modalText {
+		a.modal.text.SetHeight(2)
+	}
 }
 
 func (a *App) openBranchesHeaderMenu() {

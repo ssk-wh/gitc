@@ -228,6 +228,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, a.reloadLogCmdPreserve()
 
+	case worktreesMsg:
+		for p, list := range m.list {
+			a.worktrees[p] = list
+			if len(list) > 0 && list[0].Branch != "" {
+				a.projectBranch[p] = list[0].Branch
+			}
+		}
+		a.projectSel = a.projectRowIndex(func(r projectRow) bool {
+			if r.worktree != nil {
+				return r.worktree.Path == a.currentPath
+			}
+			return r.project.Path == a.currentProjectPath && a.currentPath == r.project.Path
+		})
+		a.ensureProjectVisible()
+		return a, nil
+
 	case projectBranchesMsg:
 		for p, b := range m.branches {
 			a.projectBranch[p] = b
@@ -556,7 +572,7 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case PaneProjects:
 		switch k.String() {
 		case "enter":
-			return a, a.switchProject(a.projectSel)
+			return a, a.activateProjectRow()
 		case "b":
 			a.anchorMenu()
 			return a, a.openContextMenu()
@@ -2090,6 +2106,24 @@ func (a *App) anchorMenu() {
 }
 
 // mouseClick 选中鼠标所在行；right 为 true 时只选中不执行双击动作。
+// activateProjectRow 展开/折叠项目节点或切换到 worktree。
+func (a *App) activateProjectRow() tea.Cmd {
+	rows := a.projectRows()
+	if a.projectSel < 0 || a.projectSel >= len(rows) {
+		return nil
+	}
+	r := rows[a.projectSel]
+	if r.worktree != nil {
+		return a.switchToWorktree(r.project.Path, r.worktree.Path)
+	}
+	if len(a.worktrees[r.project.Path]) > 1 {
+		a.projectCollapsed[r.project.Path] = !a.projectCollapsed[r.project.Path]
+		a.ensureProjectVisible()
+		return nil
+	}
+	return a.switchProject(a.projectIndex(r.project.Path))
+}
+
 func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 	pane, row, ok := a.hitTest(m.X, m.Y)
 	if !ok {
@@ -2128,18 +2162,24 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 		if row < 0 {
 			return nil, true
 		}
+		rows := a.projectRows()
 		idx := a.projectOff + row
-		if idx < 0 || idx >= len(a.projects) {
+		if idx < 0 || idx >= len(rows) {
 			return nil, true
 		}
 		a.pane = PaneProjects
 		a.projectSel = idx
 		a.ensureProjectVisible()
+		r := rows[idx]
 		if right {
-			a.openProjectMenu(idx)
+			if r.worktree != nil {
+				a.openWorktreeMenu(r.project.Path, *r.worktree)
+			} else {
+				a.openProjectMenu(a.projectIndex(r.project.Path))
+			}
 			return nil, true
 		}
-		return a.switchProject(idx), true
+		return a.activateProjectRow(), true
 	case PaneCommits:
 		if row < 0 {
 			// 只有左键点击标题栏才打开分支筛选；点边框/右键不弹菜单

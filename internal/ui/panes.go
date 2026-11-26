@@ -83,10 +83,11 @@ func (a *App) paneTitle(p Pane) string {
 func (a *App) paneInfo(p Pane) string {
 	switch p {
 	case PaneProjects:
-		if len(a.projects) == 0 {
+		rows := a.projectRows()
+		if len(rows) == 0 {
 			return "0 of 0"
 		}
-		return fmt.Sprintf("%d of %d", minInt(a.projectSel+1, len(a.projects)), len(a.projects))
+		return fmt.Sprintf("%d of %d", minInt(a.projectSel+1, len(rows)), len(rows))
 	case PaneBranches:
 		if len(a.sideItems) == 0 {
 			return "0 of 0"

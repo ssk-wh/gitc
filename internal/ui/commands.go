@@ -491,7 +491,10 @@ func (a *App) checkUpdateCmd() tea.Cmd {
 
 // saveWorkspace 把当前项目列表写入当前仓库的 .gitc-workspace。
 func (a *App) saveWorkspace() {
-	root := cleanProjectPath(a.svc.RootPath())
+	root := cleanProjectPath(a.currentProjectPath)
+	if root == "" {
+		root = cleanProjectPath(a.svc.RootPath())
+	}
 	if root == "" {
 		return
 	}
@@ -606,6 +609,62 @@ func (a *App) restoreProjectCache(root string) (tea.Cmd, bool) {
 // switchReloadMsg 在缓存首帧渲染后触发后台重新加载。
 type switchReloadMsg struct{ path string }
 
+// switchToWorktree 切换当前仓库上下文到某个 worktree，不改变项目列表。
+func (a *App) switchToWorktree(projectPath, wtPath string) tea.Cmd {
+	if wtPath == "" || wtPath == a.currentPath {
+		return nil
+	}
+	if a.busy {
+		return a.busyToast()
+	}
+	a.saveProjectCache()
+	svc, err := a.openRepo(wtPath)
+	if err != nil {
+		a.setToast(i18n.S("打开 worktree 失败: ", "open worktree failed: ")+firstLine(err.Error()), true)
+		return nil
+	}
+	if a.stream != nil {
+		a.stream.cancel()
+		a.stream = nil
+	}
+	if a.opCancel != nil {
+		a.opCancel()
+		a.opCancel = nil
+	}
+	if r, ok := svc.(*git.Repo); ok {
+		r.SetCommandHook(a.LogCommand)
+	}
+	a.svc = svc
+	root := cleanProjectPath(svc.RootPath())
+	if root == "" {
+		root = cleanProjectPath(wtPath)
+	}
+	a.currentPath = root
+	a.currentProjectPath = cleanProjectPath(projectPath)
+	a.resetForProject()
+	fileCmd, restored := a.restoreProjectCache(root)
+	a.projectSel = a.projectRowIndex(func(r projectRow) bool { return r.worktree != nil && r.worktree.Path == root })
+	a.ensureProjectVisible()
+	base := a.loadWorktreesCmd()
+	if restored {
+		reload := tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg {
+			return switchReloadMsg{path: root}
+		})
+		return tea.Batch(a.refreshCmd(true), reload, fileCmd, base)
+	}
+	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), base)
+}
+
+// projectRowIndex 返回满足条件的项目树行下标。
+func (a *App) projectRowIndex(match func(projectRow) bool) int {
+	for i, r := range a.projectRows() {
+		if match(r) {
+			return i
+		}
+	}
+	return 0
+}
+
 // switchProject 打开并切换到指定项目，重置该仓库的界面状态。
 func (a *App) switchProject(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(a.projects) {
@@ -645,20 +704,25 @@ func (a *App) switchProject(idx int) tea.Cmd {
 		paths = ws.Projects
 	}
 	a.currentPath = root
+	a.currentProjectPath = root
 	a.resetForProject()
 	a.SetProjects(paths, root)
 	fileCmd, restored := a.restoreProjectCache(root)
+	a.projectSel = a.projectRowIndex(func(r projectRow) bool { return r.worktree == nil && r.project.Path == root })
+	a.ensureProjectVisible()
 	a.saveConfig()
 	if restored {
 		// 先用缓存渲染，再延迟后台刷新，避免首帧空白。
 		reload := tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg {
 			return switchReloadMsg{path: root}
 		})
-		return tea.Batch(a.refreshCmd(true), reload, fileCmd, a.loadProjectBranchesCmd())
+		return tea.Batch(a.refreshCmd(true), reload, fileCmd, a.loadProjectBranchesCmd(), a.loadWorktreesCmd())
 	}
 	a.sideSelKey = "p:" + root
 	a.rebuildSidebar()
-	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.loadProjectBranchesCmd())
+	a.projectSel = a.projectRowIndex(func(r projectRow) bool { return r.worktree == nil && r.project.Path == root })
+	a.ensureProjectVisible()
+	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.loadProjectBranchesCmd(), a.loadWorktreesCmd())
 }
 
 // resetForProject 清理切换仓库后不应保留的状态。
@@ -724,6 +788,31 @@ func (a *App) pickProjectDirCmd() tea.Cmd {
 	return func() tea.Msg {
 		path, err := pick()
 		return dirPickedMsg{path: path, err: err}
+	}
+}
+
+// worktreesMsg 是各项目 worktree 列表的加载结果。
+type worktreesMsg struct {
+	list map[string][]git.Worktree
+}
+
+// loadWorktreesCmd 异步读取所有项目的 worktree。
+func (a *App) loadWorktreesCmd() tea.Cmd {
+	open := a.openRepo
+	projects := append([]projectEntry(nil), a.projects...)
+	return func() tea.Msg {
+		out := map[string][]git.Worktree{}
+		for _, p := range projects {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			svc, err := open(p.Path)
+			if err == nil {
+				if wts, err := svc.Worktrees(ctx); err == nil {
+					out[p.Path] = wts
+				}
+			}
+			cancel()
+		}
+		return worktreesMsg{list: out}
 	}
 }
 
@@ -826,7 +915,7 @@ func (a *App) chooseProjectDir(dir string) tea.Cmd {
 	a.rebuildSidebar()
 	a.modal = nil
 	a.setToast(i18n.S("已添加项目 "+p, "project added: "+p), false)
-	return a.loadProjectBranchesCmd()
+	return tea.Batch(a.loadProjectBranchesCmd(), a.loadWorktreesCmd())
 }
 
 // removeProject 从列表移除项目（当前项目不可移除）。
