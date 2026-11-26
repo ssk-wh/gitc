@@ -1553,10 +1553,14 @@ func (a *App) viewHelp() string {
 			rw = 20
 		}
 		off := clampHelpOffset(a.detail.offset, len(right), viewH)
-		// 左侧品牌区整体垂直居中，让图标落在屏幕视觉中心。
+		// 左右两栏内容都垂直居中；内容超过可视高度时从顶部开始滚动。
 		leftTop := 0
 		if len(left) < viewH {
 			leftTop = (viewH - len(left)) / 2
+		}
+		rightTop := 0
+		if len(right) < viewH {
+			rightTop = (viewH - len(right)) / 2
 		}
 		for i := 0; i < viewH; i++ {
 			l := ""
@@ -1564,8 +1568,8 @@ func (a *App) viewHelp() string {
 				l = left[j]
 			}
 			r := ""
-			if off+i < len(right) {
-				r = right[off+i]
+			if j := i - rightTop; j >= 0 && off+j < len(right) {
+				r = right[off+j]
 			}
 			line := padRight(truncate(l, lw), lw) + styleDim.Render(" │ ") + truncate(r, rw)
 			b.WriteString(truncate(line, a.width))
