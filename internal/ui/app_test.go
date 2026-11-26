@@ -3139,3 +3139,35 @@ func TestProjectBlankClickNoReload(t *testing.T) {
 		t.Fatalf("空白点击触发了刷新: cmd=%v logGen=%d->%d", cmd, gen, a.logGen)
 	}
 }
+
+// TestAutoRefreshUnchangedSkipsUpdate 数据无变化时不更新模型、不触发重绘。
+func TestAutoRefreshUnchangedSkipsUpdate(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.refs = []git.Ref{{Name: "main", FullName: "refs/heads/main", Kind: git.RefLocal, Target: "aaaaaaaaaaaa1111", Head: true}}
+	a.status = git.Status{Branch: "main", OID: "aaaaaaaaaaaa1111"}
+	a.stashes = nil
+	_, cmd := a.Update(refreshMsg{
+		gen: a.refreshGen, auto: true,
+		status: a.status, refs: a.refs, state: a.state, stashes: a.stashes,
+	})
+	if cmd != nil {
+		t.Fatal("无变化时不应返回刷新命令")
+	}
+}
+
+// TestWorktreesUnchangedSkipsUpdate worktree 未变化时不清空/重设项目选择。
+func TestWorktreesUnchangedSkipsUpdate(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.currentPath = cleanProjectPath(root)
+	a.currentProjectPath = cleanProjectPath(root)
+	list := []git.Worktree{{Path: cleanProjectPath(root), Branch: "main", Main: true}}
+	a.worktrees[cleanProjectPath(root)] = list
+	a.projectSel = 0
+	a.projectOff = 0
+	_, cmd := a.Update(worktreesMsg{list: map[string][]git.Worktree{cleanProjectPath(root): list}})
+	if cmd != nil {
+		t.Fatal("worktree 无变化时不应返回命令")
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -84,6 +85,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.err != nil {
 			a.setToast(firstLine(m.err.Error()), true)
+			return a, nil
+		}
+		same := reflect.DeepEqual(a.status, m.status) &&
+			reflect.DeepEqual(a.refs, m.refs) &&
+			reflect.DeepEqual(a.state, m.state) &&
+			reflect.DeepEqual(a.stashes, m.stashes)
+		if m.auto && same {
+			// 外部没有变化：不更新模型、不触发任何重绘
+			a.verifyAfterRestore = false
 			return a, nil
 		}
 		oldOID := a.status.OID
@@ -252,6 +262,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case worktreesMsg:
+		changed := false
 		for p, list := range m.list {
 			valid := make([]git.Worktree, 0, len(list))
 			for i := range list {
@@ -262,10 +273,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				valid = append(valid, list[i])
 			}
 			list = valid
+			if reflect.DeepEqual(a.worktrees[p], list) {
+				continue
+			}
+			changed = true
 			a.worktrees[p] = list
 			if len(list) > 0 && list[0].Branch != "" {
 				a.projectBranch[p] = list[0].Branch
 			}
+		}
+		if !changed {
+			return a, nil
 		}
 		a.projectSel = a.projectRowIndex(func(r projectRow) bool {
 			if r.worktree != nil {

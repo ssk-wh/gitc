@@ -227,7 +227,8 @@ func (a *App) refreshCmd(quick bool) tea.Cmd {
 
 // autoRefreshCmd 是定时轮询触发的刷新。
 func (a *App) autoRefreshCmd() tea.Cmd {
-	return a.refreshCmdWith(true, true)
+	// 定时检查需要包含未跟踪文件，才能发现外部新增文件；无变化时不会重绘。
+	return a.refreshCmdWith(false, true)
 }
 
 // autoRefreshTickMsg 触发一次外部变更检查。
