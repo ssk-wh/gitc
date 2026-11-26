@@ -380,8 +380,7 @@ func (a *App) commitMenuChoices(c *git.Commit) []choice {
 	if a.filter == "" && a.searchResults == nil {
 		if n := a.commitSelectionCount(); n >= 2 {
 			out = append(out, choice{label: fmt.Sprintf(i18n.S("合并 %d 个提交", "squash %d commits"), n), action: func(a *App) tea.Cmd {
-				a.squashPrompt()
-				return nil
+				return a.squashPrompt()
 			}})
 		}
 	}

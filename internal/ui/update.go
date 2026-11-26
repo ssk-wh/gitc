@@ -274,6 +274,18 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(cmds...)
 
+	case squashMessagesMsg:
+		if m.err != nil {
+			a.setToast(firstLine(m.err.Error()), true)
+			return a, nil
+		}
+		if a.status.OID != m.head {
+			a.setToast(i18n.S("提交已变化，请刷新后重试", "commits changed; refresh and retry"), true)
+			return a, nil
+		}
+		a.openSquashPrompt(m.hashes, m.head, m.parent, m.msg)
+		return a, nil
+
 	case dirPickedMsg:
 		switch {
 		case errors.Is(m.err, platform.ErrCanceled):

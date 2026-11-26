@@ -1504,7 +1504,7 @@ func (a *App) viewDetailOverlay() string {
 		b.WriteString(colorizeDiffLine(ln, a.width))
 		b.WriteByte('\n')
 	}
-	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  PgUp/PgDn 翻页  esc 返回", "↑/↓ scroll  PgUp/PgDn page  esc back")))
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  PgUp/PgDn 翻页  Esc 返回", "↑/↓ scroll  PgUp/PgDn page  esc back")))
 	return a.withOverlayScrollbar(b.String(), len(lines), off, viewH)
 }
 
@@ -1553,10 +1553,14 @@ func (a *App) viewHelp() string {
 			rw = 20
 		}
 		off := clampHelpOffset(a.detail.offset, len(right), viewH)
-		// 左侧品牌区整体垂直居中，让图标落在屏幕视觉中心。
+		// 左右两栏内容都垂直居中；内容超过可视高度时从顶部开始滚动。
 		leftTop := 0
 		if len(left) < viewH {
 			leftTop = (viewH - len(left)) / 2
+		}
+		rightTop := 0
+		if len(right) < viewH {
+			rightTop = (viewH - len(right)) / 2
 		}
 		for i := 0; i < viewH; i++ {
 			l := ""
@@ -1564,15 +1568,15 @@ func (a *App) viewHelp() string {
 				l = left[j]
 			}
 			r := ""
-			if off+i < len(right) {
-				r = right[off+i]
+			if j := i - rightTop; j >= 0 && off+j < len(right) {
+				r = right[off+j]
 			}
 			line := padRight(truncate(l, lw), lw) + styleDim.Render(" │ ") + truncate(r, rw)
 			b.WriteString(truncate(line, a.width))
 			b.WriteByte('\n')
 		}
 	}
-	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动快捷键  PgUp/PgDn 翻页  esc 返回", "↑/↓ scroll keys  PgUp/PgDn page  esc back")))
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动快捷键  PgUp/PgDn 翻页  Esc 返回", "↑/↓ scroll keys  PgUp/PgDn page  esc back")))
 	return b.String()
 }
 
@@ -1622,7 +1626,7 @@ func helpBrandLines() []string {
 
 // helpKeyLines 返回帮助页右栏：快捷键标题与按键说明。
 func helpKeyLines() []string {
-	lines := []string{styleTitle.Render(i18n.S("快捷键", "Keybindings")), ""}
+	lines := []string{}
 	for _, r := range helpRows() {
 		lines = append(lines, "  "+styleAccent.Render(padRight(r[0], 22))+r[1])
 	}
@@ -1708,7 +1712,7 @@ func (a *App) viewLog() string {
 		b.WriteString(truncate(ln, a.width))
 		b.WriteByte('\n')
 	}
-	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  PgUp/PgDn 翻页  esc 返回", "↑/↓ scroll  PgUp/PgDn page  esc back")))
+	b.WriteString(styleDim.Render(i18n.S("↑/↓ 滚动  PgUp/PgDn 翻页  Esc 返回", "↑/↓ scroll  PgUp/PgDn page  esc back")))
 	return a.withOverlayScrollbar(b.String(), len(a.logs), off, viewH)
 }
 
@@ -1724,7 +1728,7 @@ func (a *App) withOverlayScrollbar(s string, total, off, visible int) string {
 	}
 	for i := 0; i < thumb; i++ {
 		idx := 1 + start + i
-		// 最后一行是“↑/↓ 滚动 esc 返回”，不要覆盖
+		// 最后一行是“↑/↓ 滚动 Esc 返回”，不要覆盖
 		if idx > 0 && idx < len(lines)-1 {
 			lines[idx] = replaceCellStyled(lines[idx], a.width-1, styleAccent.Render("┃"))
 		}

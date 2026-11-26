@@ -526,13 +526,47 @@ func (a *App) squashPlan() (hashes []string, head, parent, msg string, err error
 	return hashes, head, parent, msg, nil
 }
 
-// squashPrompt 合并多选提交：先编辑提交信息，再确认改写历史。
-func (a *App) squashPrompt() {
-	hashes, head, parent, msg, err := a.squashPlan()
+// squashMessagesMsg 是选中提交的完整信息集合。
+type squashMessagesMsg struct {
+	hashes []string
+	head   string
+	parent string
+	msg    string
+	err    error
+}
+
+// loadSquashMessagesCmd 异步读取所有选中提交的完整提交信息（标题 + 正文）。
+func (a *App) loadSquashMessagesCmd(hashes []string, head, parent string) tea.Cmd {
+	svc := a.svc
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+		defer cancel()
+		parts := make([]string, 0, len(hashes))
+		for i := len(hashes) - 1; i >= 0; i-- {
+			msg, err := svc.CommitMessage(ctx, hashes[i])
+			if err != nil {
+				return squashMessagesMsg{err: err}
+			}
+			if msg = strings.TrimSpace(msg); msg != "" {
+				parts = append(parts, msg)
+			}
+		}
+		return squashMessagesMsg{hashes: hashes, head: head, parent: parent, msg: strings.Join(parts, string(rune(10))+string(rune(10)))}
+	}
+}
+
+// squashPrompt 合并多选提交：先读取完整提交信息，再打开编辑框。
+func (a *App) squashPrompt() tea.Cmd {
+	hashes, head, parent, _, err := a.squashPlan()
 	if err != nil {
 		a.setToast(err.Error(), true)
-		return
+		return nil
 	}
+	return a.loadSquashMessagesCmd(hashes, head, parent)
+}
+
+// openSquashPrompt 用完整提交信息集合打开合并编辑框。
+func (a *App) openSquashPrompt(hashes []string, head, parent, msg string) {
 	n := len(hashes)
 	a.promptText(fmt.Sprintf(i18n.S("合并 %d 个提交（改写历史，可编辑提交信息）", "squash %d commits"), n), "", msg, func(a *App, v string) tea.Cmd {
 		v = strings.TrimSpace(v)

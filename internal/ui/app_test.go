@@ -3195,7 +3195,7 @@ func TestHelpTwoColumnLayout(t *testing.T) {
 	a.overlay = overlayHelp
 	a.detail.offset = 0
 	v := plainView(a)
-	for _, want := range []string{"██████ ██ ██████ ██████", "终端里的 Git 工作台", "https://github.com/ssk-wh/gitc", "https://github.com/ssk-wh/gitc/releases", "https://github.com/ssk-wh/gitc/issues", "快捷键", "↑/↓ 滚动快捷键"} {
+	for _, want := range []string{"██████ ██ ██████ ██████", "终端里的 Git 工作台", "https://github.com/ssk-wh/gitc", "https://github.com/ssk-wh/gitc/releases", "https://github.com/ssk-wh/gitc/issues", "↑/↓ 滚动快捷键"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("帮助页缺少 %q:\n%s", want, v)
 		}
@@ -3231,4 +3231,26 @@ func TestHelpNarrowFallsBack(t *testing.T) {
 			t.Fatalf("窄屏帮助页缺少 %q:\n%s", want, v)
 		}
 	}
+}
+
+// TestHelpKeysVerticallyCentered verifies the key list is vertically centered in two-column help.
+func TestHelpKeysVerticallyCentered(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a.overlay = overlayHelp
+	lines := strings.Split(plainView(a), string(rune(10)))
+	for _, line := range lines {
+		if strings.Contains(line, "│ 快捷键") {
+			t.Fatal("help key list should not have a header")
+		}
+	}
+	for i, line := range lines {
+		if strings.Contains(line, "│") && strings.Contains(line, "↑↓") {
+			if i < 2 {
+				t.Fatalf("key list not vertically centered: line=%d\n%s", i, strings.Join(lines, string(rune(10))))
+			}
+			return
+		}
+	}
+	t.Fatal("key list not found")
 }
