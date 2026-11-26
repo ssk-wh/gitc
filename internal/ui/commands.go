@@ -32,6 +32,7 @@ const (
 type refreshMsg struct {
 	gen     int
 	quick   bool
+	auto    bool
 	status  git.Status
 	refs    []git.Ref
 	state   git.RepoState
@@ -190,13 +191,29 @@ func readBatchN(s *logStream, gen, size int) tea.Cmd {
 
 // refreshCmd 刷新状态（quick=true 时暂不扫描未跟踪文件）。
 func (a *App) refreshCmd(quick bool) tea.Cmd {
+	return a.refreshCmdWith(quick, false)
+}
+
+// autoRefreshCmd 是定时轮询触发的刷新。
+func (a *App) autoRefreshCmd() tea.Cmd {
+	return a.refreshCmdWith(true, true)
+}
+
+// autoRefreshTickMsg 触发一次外部变更检查。
+type autoRefreshTickMsg struct{}
+
+func autoRefreshTickCmd() tea.Cmd {
+	return tea.Tick(3*time.Second, func(time.Time) tea.Msg { return autoRefreshTickMsg{} })
+}
+
+func (a *App) refreshCmdWith(quick, auto bool) tea.Cmd {
 	a.refreshGen++
 	gen := a.refreshGen
 	svc := a.svc
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
-		m := refreshMsg{gen: gen, quick: quick}
+		m := refreshMsg{gen: gen, quick: quick, auto: auto}
 		// 并行读取状态与引用；State 走文件系统检测，Stashes 仅在完整刷新时读取。
 		var wg sync.WaitGroup
 		wg.Add(2)

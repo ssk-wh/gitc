@@ -66,6 +66,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case autoRefreshTickMsg:
+		next := autoRefreshTickCmd()
+		if a.busy {
+			return a, next
+		}
+		a.autoTicks++
+		cmds := []tea.Cmd{a.autoRefreshCmd(), next}
+		if a.autoTicks%5 == 0 {
+			cmds = append(cmds, a.loadWorktreesCmd())
+		}
+		return a, tea.Batch(cmds...)
+
 	case refreshMsg:
 		if m.gen != a.refreshGen {
 			return a, nil
@@ -74,6 +86,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.setToast(firstLine(m.err.Error()), true)
 			return a, nil
 		}
+		oldOID := a.status.OID
+		oldBranch := a.status.Branch
+		oldRefs := a.refs
 		a.status = m.status
 		if a.currentPath != "" {
 			a.projectBranch[a.currentPath] = m.status.Branch
@@ -92,6 +107,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var extra tea.Cmd
 		if a.onDirtyRow() {
 			extra = a.loadWorkingFiles()
+		}
+		if m.auto && !a.loadingLog {
+			if m.status.OID != oldOID || m.status.Branch != oldBranch || !sameRefs(oldRefs, m.refs) {
+				extra = tea.Batch(extra, a.reloadLogCmdPreserve())
+			}
 		}
 		if m.quick {
 			return a, tea.Batch(a.refreshCmd(false), extra)
@@ -611,6 +631,23 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a *App) busyToast() tea.Cmd {
 	a.setToast(i18n.S("上一个操作尚未完成，按 Esc 取消", "previous operation still running, press Esc to cancel"), true)
 	return nil
+}
+
+// sameRefs 比较引用列表是否一致。
+func sameRefs(a, b []git.Ref) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]string, len(a))
+	for _, r := range a {
+		seen[r.FullName] = r.Target
+	}
+	for _, r := range b {
+		if seen[r.FullName] != r.Target {
+			return false
+		}
+	}
+	return true
 }
 
 // currentViewHeight 返回当前面板可视行数。

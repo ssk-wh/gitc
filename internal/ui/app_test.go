@@ -285,7 +285,7 @@ func pump(t *testing.T, a *App, cmd tea.Cmd) {
 				}
 			}
 			cmd = nil
-		case spinnerTickMsg:
+		case spinnerTickMsg, autoRefreshTickMsg:
 			cmd = nil
 		default:
 			_, next := a.Update(msg)
@@ -2931,5 +2931,49 @@ func TestRemoveCurrentProject(t *testing.T) {
 	a.removeProject(a.projects[0])
 	if len(a.projects) != 1 {
 		t.Fatal("最后一个项目不应被移除")
+	}
+}
+
+// TestAutoRefreshDetectsExternalRefs 外部引用变化应触发后台重载提交历史。
+func TestAutoRefreshDetectsExternalRefs(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.refs = []git.Ref{{Name: "main", FullName: "refs/heads/main", Kind: git.RefLocal, Target: "aaaaaaaaaaaa1111", Head: true}}
+	a.status = git.Status{Branch: "main", OID: "aaaaaaaaaaaa1111"}
+	refs := append([]git.Ref(nil), a.refs...)
+	refs = append(refs, git.Ref{Name: "v9.9", FullName: "refs/tags/v9.9", Kind: git.RefTag, Target: "aaaaaaaaaaaa1111"})
+	_, cmd := a.Update(refreshMsg{
+		gen: a.refreshGen, quick: true, auto: true,
+		status: a.status, refs: refs,
+	})
+	if cmd == nil {
+		t.Fatal("外部引用变化未触发刷新")
+	}
+	if !a.logPreserve {
+		t.Fatal("引用变化后应后台重载提交历史")
+	}
+}
+
+// TestAutoRefreshNoChange 无变化时不重载提交历史。
+func TestAutoRefreshNoChange(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.refs = []git.Ref{{Name: "main", FullName: "refs/heads/main", Kind: git.RefLocal, Target: "aaaaaaaaaaaa1111", Head: true}}
+	a.status = git.Status{Branch: "main", OID: "aaaaaaaaaaaa1111"}
+	a.logPreserve = false
+	a.Update(refreshMsg{gen: a.refreshGen, quick: true, auto: true, status: a.status, refs: a.refs})
+	if a.logPreserve {
+		t.Fatal("无变化时不应重载提交历史")
+	}
+}
+
+// TestSameRefs 引用比较对顺序不敏感、对目标敏感。
+func TestSameRefs(t *testing.T) {
+	a := []git.Ref{{FullName: "refs/heads/main", Target: "1"}, {FullName: "refs/tags/v1", Target: "2"}}
+	b := []git.Ref{{FullName: "refs/tags/v1", Target: "2"}, {FullName: "refs/heads/main", Target: "1"}}
+	if !sameRefs(a, b) {
+		t.Fatal("同内容不同顺序应相等")
+	}
+	b[0].Target = "3"
+	if sameRefs(a, b) {
+		t.Fatal("目标变化应检测到")
 	}
 }

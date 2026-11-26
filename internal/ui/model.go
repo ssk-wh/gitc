@@ -319,6 +319,7 @@ type App struct {
 	projectOff         int
 	projectBranch      map[string]string
 	projectCache       map[string]*projectCache
+	autoTicks          int
 	worktrees          map[string][]git.Worktree
 	projectCollapsed   map[string]bool
 	currentProjectPath string
@@ -435,7 +436,7 @@ func (a *App) Msgs() <-chan tea.Msg { return a.msgs }
 
 // Init 启动首屏加载。
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.checkUpdateCmd(), a.loadProjectBranchesCmd(), a.loadWorktreesCmd())
+	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), a.checkUpdateCmd(), a.loadProjectBranchesCmd(), a.loadWorktreesCmd(), autoRefreshTickCmd())
 }
 
 // 尺寸计算
