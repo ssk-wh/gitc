@@ -2442,7 +2442,7 @@ func TestProjectMenuUsesClickedProject(t *testing.T) {
 func TestFooterHintsRightAligned(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	a.toast = "已复制一段很长的提交信息用于测试底部截断"
+	a.toast = strings.Repeat("已复制一段很长的提交信息用于测试底部截断", 3)
 	v := ansi.Strip(a.viewFooter())
 	plain := strings.TrimRight(v, " ")
 	hint := strings.TrimRight(ansi.Strip(a.contextHints()), " ")
@@ -3177,5 +3177,51 @@ func TestWorktreesUnchangedSkipsUpdate(t *testing.T) {
 	_, cmd := a.Update(worktreesMsg{list: map[string][]git.Worktree{cleanProjectPath(root): list}})
 	if cmd != nil {
 		t.Fatal("worktree 无变化时不应返回命令")
+	}
+}
+
+// TestLogoBadge 底部左侧使用品牌化 wordmark。
+func TestLogoBadge(t *testing.T) {
+	a, _ := newFakeApp(t)
+	if !strings.Contains(plainView(a), "▐ gitc ▌") {
+		t.Fatalf("底部缺少品牌标识: %q", plainView(a))
+	}
+}
+
+// TestHelpTwoColumnLayout 宽终端帮助页分左右两栏：左侧品牌/GitHub，右侧快捷键。
+func TestHelpTwoColumnLayout(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a.overlay = overlayHelp
+	a.detail.offset = 0
+	v := plainView(a)
+	for _, want := range []string{"████ █ ███ ████", "终端里的 Git 工作台", "github.com/ssk-wh/gitc", "快捷键", "↑/↓ 滚动快捷键"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("帮助页缺少 %q:\n%s", want, v)
+		}
+	}
+	// 品牌图标和快捷键标题应在同一行，说明是左右分栏而非上下堆叠。
+	found := false
+	for _, line := range strings.Split(v, string(rune(10))) {
+		if strings.Contains(line, "████ █ ███ ████") && strings.Contains(line, "快捷键") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("帮助页未形成左右分栏:\n%s", v)
+	}
+}
+
+// TestHelpNarrowFallsBack 窄终端退回单栏，GitHub 与快捷键仍可见。
+func TestHelpNarrowFallsBack(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	a.overlay = overlayHelp
+	v := plainView(a)
+	for _, want := range []string{"项目信息", "https://github.com/ssk-wh/gitc", "快捷键", "↑↓"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("窄屏帮助页缺少 %q:\n%s", want, v)
+		}
 	}
 }
