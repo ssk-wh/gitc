@@ -1395,6 +1395,7 @@ func TestThemeAndLayoutPersist(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.persist = true
 	a.leftW = 41
+	a.projectH = 6
 	a.drawerLeftW = 27
 	a.rightTopH = 9
 	a.leftTopH = 8
@@ -1406,7 +1407,7 @@ func TestThemeAndLayoutPersist(t *testing.T) {
 	if cfg.Theme != "light" {
 		t.Errorf("主题未持久化: %q", cfg.Theme)
 	}
-	if cfg.LeftWidth != 41 || cfg.DrawerLeft != 27 || cfg.RightTop != 9 ||
+	if cfg.LeftWidth != 41 || cfg.ProjectH != 6 || cfg.DrawerLeft != 27 || cfg.RightTop != 9 ||
 		cfg.LeftTop != 8 || cfg.LeftMid != 7 || cfg.CommandH != 5 {
 		t.Errorf("布局未完整持久化: %+v", cfg)
 	}
@@ -2781,5 +2782,88 @@ func TestProjectPaneWheelScroll(t *testing.T) {
 	max := len(a.projectRows()) - a.projectViewHeight()
 	if a.projectOff > max {
 		t.Fatalf("projectOff = %d 超过上限 %d", a.projectOff, max)
+	}
+}
+
+// TestProjectDividerDrag 项目区与分支区之间的分隔条可拖动并双击复位。
+func TestProjectDividerDrag(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+	l := a.panelLayout()
+	y := l.projH
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: y})
+	if a.dragMode != 7 {
+		t.Fatalf("项目分隔线拖动模式 = %d, 期望 7", a.dragMode)
+	}
+	a.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: 2, Y: y + 2})
+	if a.projectH != l.projH+2 {
+		t.Fatalf("projectH = %d, 期望 %d", a.projectH, l.projH+2)
+	}
+	a.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 2, Y: y + 2})
+	// 双击复位为自适应
+	a.lastClick = time.Time{}
+	l = a.panelLayout()
+	y = l.projH
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: y})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 2, Y: y})
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: y})
+	if a.projectH != 0 || a.dragMode != 0 {
+		t.Fatalf("双击复位后 projectH=%d dragMode=%d", a.projectH, a.dragMode)
+	}
+}
+
+// TestProjectRightClickMenus 项目行与 worktree 行右键菜单要对应正确层级。
+func TestProjectRightClickMenus(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root, wt := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.currentPath = cleanProjectPath(root)
+	a.currentProjectPath = cleanProjectPath(root)
+	a.worktrees[cleanProjectPath(root)] = []git.Worktree{
+		{Path: cleanProjectPath(root), Branch: "main", Main: true},
+		{Path: cleanProjectPath(wt), Branch: "wt-branch"},
+	}
+	a.pane = PaneProjects
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: 2, Y: 1})
+	if a.modal == nil || strings.Contains(strings.ToLower(a.modal.title), "worktree") {
+		t.Fatalf("项目行右键菜单错误: %+v", a.modal)
+	}
+	foundAdd := false
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "添加项目") {
+			foundAdd = true
+		}
+	}
+	if !foundAdd {
+		t.Fatalf("项目行菜单缺少添加项目: %+v", a.modal.choices)
+	}
+	a.modal = nil
+	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: 2, Y: 2})
+	if a.modal == nil || !strings.Contains(strings.ToLower(a.modal.title), "worktree") {
+		t.Fatalf("worktree 行右键菜单错误: %+v", a.modal)
+	}
+}
+
+// TestProjectTreeSpacing 项目行 * 与名称只留一格，worktree 子行不用额外符号。
+func TestProjectTreeSpacing(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.currentPath = cleanProjectPath(root)
+	a.currentProjectPath = cleanProjectPath(root)
+	view := ansi.Strip(a.viewProjectsPanel(40, 4))
+	if !strings.Contains(view, "* "+filepath.Base(cleanProjectPath(root))) {
+		t.Fatalf("当前项目标记间距错误: %q", view)
+	}
+	a.worktrees[cleanProjectPath(root)] = []git.Worktree{
+		{Path: cleanProjectPath(root), Branch: "main", Main: true},
+		{Path: filepath.Join(t.TempDir(), "wt"), Branch: "wt-branch"},
+	}
+	view = ansi.Strip(a.viewProjectsPanel(40, 5))
+	if strings.Contains(view, "└") {
+		t.Fatalf("worktree 子行不应有额外符号: %q", view)
+	}
+	if !strings.Contains(view, "wt-branch") {
+		t.Fatalf("worktree 子行缺少分支: %q", view)
 	}
 }

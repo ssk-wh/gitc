@@ -1828,6 +1828,8 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.X == l.leftW:
 				a.hoverDiv = 1
+			case m.X < l.leftW && ly == l.projH:
+				a.hoverDiv = 7
 			case m.X < l.leftW && ly == l.projH+1+l.leftTopH:
 				a.hoverDiv = 4
 			case m.X > l.leftW && ly == l.rightTopH:
@@ -1866,6 +1868,10 @@ func (a *App) handleMouse(m tea.MouseMsg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.X == l.leftW:
 				if detect(1, "div:left", func() { a.leftW = 0 }) {
+					return a, nil
+				}
+			case m.X < l.leftW && ly == l.projH:
+				if detect(7, "div:project", func() { a.projectH = 0 }) {
 					return a, nil
 				}
 			case m.X < l.leftW && ly == l.projH+1+l.leftTopH:
@@ -2170,13 +2176,8 @@ func (a *App) mouseClick(m tea.MouseMsg, right bool) (tea.Cmd, bool) {
 		a.pane = PaneProjects
 		a.projectSel = idx
 		a.ensureProjectVisible()
-		r := rows[idx]
 		if right {
-			if r.worktree != nil {
-				a.openWorktreeMenu(r.project.Path, *r.worktree)
-			} else {
-				a.openProjectMenu(a.projectIndex(r.project.Path))
-			}
+			// 菜单统一由外层右键处理，避免重复打开
 			return nil, true
 		}
 		return a.activateProjectRow(), true
@@ -2392,6 +2393,8 @@ func (a *App) dragTo(x, y int) {
 		return v
 	}
 	switch a.dragMode {
+	case 7:
+		a.projectH = clamp(y, 3, l.bodyH-10)
 	case 1:
 		a.leftW = clamp(x, 22, a.width-40)
 	case 4:
