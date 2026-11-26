@@ -536,3 +536,45 @@ func TestEditCommitMessage(t *testing.T) {
 		t.Fatalf("HEAD 信息 = %q", got)
 	}
 }
+
+func TestWorktrees(t *testing.T) {
+	_, dir := newTestRepo(t)
+	r := mustRepo(t, dir)
+	commitFile(t, dir, "a.txt", "1", "first")
+	ctx := context.Background()
+	if _, err := r.AddWorktree(ctx, filepath.Join(t.TempDir(), "wt1"), "wt-branch"); err != nil {
+		t.Fatalf("AddWorktree: %v", err)
+	}
+	wts, err := r.Worktrees(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 2 {
+		t.Fatalf("worktree 数 = %d: %+v", len(wts), wts)
+	}
+	if !wts[0].Main {
+		t.Errorf("第一个应为主 worktree: %+v", wts[0])
+	}
+	found := false
+	for _, wt := range wts {
+		if wt.Branch == "wt-branch" {
+			found = true
+			if wt.Path == "" || wt.Head == "" {
+				t.Errorf("worktree 字段缺失: %+v", wt)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("未找到新建 worktree: %+v", wts)
+	}
+	if _, err := r.RemoveWorktree(ctx, wts[1].Path, true); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
+	}
+	wts, err = r.Worktrees(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 1 {
+		t.Fatalf("移除后 worktree 数 = %d", len(wts))
+	}
+}
