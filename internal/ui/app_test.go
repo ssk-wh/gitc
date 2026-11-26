@@ -3232,3 +3232,19 @@ func TestHelpNarrowFallsBack(t *testing.T) {
 		}
 	}
 }
+// TestHelpKeysVerticallyCentered verifies the key list is vertically centered in two-column help.
+func TestHelpKeysVerticallyCentered(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a.overlay = overlayHelp
+	lines := strings.Split(plainView(a), string(rune(10)))
+	for i, line := range lines {
+		if strings.Contains(line, "│ 快捷键") {
+			if i < 2 {
+				t.Fatalf("key list not vertically centered: line=%d\n%s", i, strings.Join(lines, string(rune(10))))
+			}
+			return
+		}
+	}
+	t.Fatal("key list header not found")
+}
