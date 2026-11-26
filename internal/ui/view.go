@@ -427,14 +427,15 @@ func (a *App) viewProjectsPanel(width, height int) string {
 	for _, r := range rows {
 		label := ""
 		if r.worktree == nil {
-			label = r.project.Name
+			arrow := " "
 			if len(a.worktrees[r.project.Path]) > 1 {
 				if a.projectCollapsed[r.project.Path] {
-					label = "▸ " + label
+					arrow = "▸"
 				} else {
-					label = "▾ " + label
+					arrow = "▾"
 				}
 			}
+			label = arrow + r.project.Name
 		} else {
 			label = "  " + worktreeLabel(*r.worktree)
 		}
@@ -465,14 +466,14 @@ func (a *App) viewProjectsPanel(width, height int) string {
 	}
 	for i := a.projectOff; i < end; i++ {
 		r := rowsOut[i]
-		marker := "  "
+		marker := " "
 		style := lipgloss.NewStyle().Foreground(colorFg)
 		selected := a.pane == PaneProjects && i == a.projectSel
 		if selected {
-			marker = "› "
+			marker = "›"
 			style = styleSel
 		}
-		cur := "  "
+		cur := " "
 		isCurrent := false
 		if rows[i].worktree == nil {
 			isCurrent = rows[i].project.Path == a.currentProjectPath && a.currentPath == rows[i].project.Path
@@ -480,7 +481,7 @@ func (a *App) viewProjectsPanel(width, height int) string {
 			isCurrent = rows[i].worktree.Path == a.currentPath
 		}
 		if isCurrent {
-			cur = "* "
+			cur = "*"
 			if !selected {
 				style = styleGood
 			}
