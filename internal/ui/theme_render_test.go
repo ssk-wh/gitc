@@ -50,3 +50,25 @@ func TestChoiceMenuHasOwnColors(t *testing.T) {
 		}
 	}
 }
+
+// TestChoiceMenuBorderUsesActiveColor 菜单边框统一使用激活区域颜色，源区域暂时退出激活态。
+func TestChoiceMenuBorderUsesActiveColor(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(termenv.Ascii) })
+	a, _ := newFakeApp(t)
+	a.pane = PaneBranches
+	if !a.paneFocused(PaneBranches) {
+		t.Fatal("菜单未打开时当前区域应为激活态")
+	}
+	a.choose("菜单", []choice{{label: "第一项"}, {label: "第二项"}})
+	if a.paneFocused(PaneBranches) {
+		t.Fatal("菜单打开时当前区域应退出激活态")
+	}
+	box, _, _ := a.choiceMenuBox()
+	prefix := strings.SplitN(activeBorderStyle().Render("│"), "│", 2)[0]
+	for i, line := range box {
+		if !strings.HasPrefix(line, prefix) {
+			t.Fatalf("菜单第 %d 行边框颜色不一致: %q", i, line)
+		}
+	}
+}
