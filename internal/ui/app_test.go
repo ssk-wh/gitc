@@ -3001,3 +3001,62 @@ func TestOverlayKeepsBackgroundColors(t *testing.T) {
 		}
 	}
 }
+
+// TestOverlayAlignsBorderWithWideChars 背景含中文/宽字符时浮层边框仍按列对齐。
+func TestOverlayAlignsBorderWithWideChars(t *testing.T) {
+	_, _ = newFakeApp(t)
+	line := "中文中文中文中文中文中文中文中文"
+	base := line + string(rune(10)) + line + string(rune(10)) + line
+	box := []string{"╭───╮", "│abc│", "╰───╯"}
+	out := ansi.Strip(overlayBox(base, box, 5, 0, 30))
+	lines := strings.Split(out, string(rune(10)))
+	if len(lines) < 3 {
+		t.Fatal("浮层行数不足")
+	}
+	for i, want := range []string{"╭", "│", "╰"} {
+		idx := strings.Index(lines[i], want)
+		if idx < 0 {
+			t.Fatalf("第 %d 行缺少边框: %q", i, lines[i])
+		}
+		col := strWidth(lines[i][:idx])
+		if col != 5 {
+			t.Fatalf("第 %d 行边框列 = %d，期望 5: %q", i, col, lines[i])
+		}
+	}
+}
+
+// TestChoiceMenuBorderAligned 真实菜单浮在含中文的主界面上时，左右边框逐行对齐。
+func TestChoiceMenuBorderAligned(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.pane = PaneCommits
+	a.graphSel = a.dirtyOffset()
+	a.modalAnchorX, a.modalAnchorY = 60, 6
+	_ = a.openContextMenu()
+	if a.modal == nil {
+		t.Fatal("菜单未打开")
+	}
+	box, x, y := a.choiceMenuBox()
+	if len(box) == 0 {
+		t.Fatal("菜单框为空")
+	}
+	lines := strings.Split(ansi.Strip(a.View()), string(rune(10)))
+	for i, bl := range box {
+		yy := y + i
+		if yy < 0 || yy >= len(lines) {
+			t.Fatalf("菜单行越界: %d", yy)
+		}
+		line := lines[yy]
+		plainBox := ansi.Strip(bl)
+		idx := strings.Index(line, plainBox)
+		if idx < 0 {
+			t.Fatalf("菜单第 %d 行未找到完整边框: %q", i, line)
+		}
+		col := strWidth(line[:idx])
+		if col != x {
+			t.Fatalf("菜单第 %d 行左边框列 = %d，期望 %d: %q", i, col, x, line)
+		}
+		if w := strWidth(plainBox); w != strWidth(bl) {
+			t.Fatalf("菜单第 %d 行宽度异常: %d/%d", i, w, strWidth(bl))
+		}
+	}
+}
