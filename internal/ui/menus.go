@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -35,10 +34,8 @@ func (a *App) openContextMenu() tea.Cmd {
 			return nil
 		}
 		if it.kind == sideTag {
-			a.tagMenuName = it.ref.Name
-			a.choose(a.branchMenuTitle(it), a.tagMenuChoices(it.ref, a.remoteTagCache[it.ref.Name]))
-			a.tagMenuModal = a.modal
-			return a.checkRemoteTagCmd(it.ref.Name)
+			a.choose(a.branchMenuTitle(it), a.tagMenuChoices(it.ref))
+			return nil
 		}
 		a.choose(a.branchMenuTitle(it), a.branchMenuChoices(it))
 	case PaneCommits:
@@ -107,26 +104,22 @@ func refIdentity(ref git.Ref) string {
 	return ref.Name
 }
 
-// tagMenuChoices 生成标签菜单；pushed 表示 origin 已存在该标签。
-func (a *App) tagMenuChoices(ref git.Ref, pushed bool) []choice {
-	out := []choice{
+// tagMenuChoices 生成标签菜单；固定展示推送与本地/远端删除入口，不查询远端状态。
+func (a *App) tagMenuChoices(ref git.Ref) []choice {
+	name := ref.Name
+	return []choice{
 		{label: i18n.S("检出该标签", "checkout tag"), action: func(a *App) tea.Cmd {
 			return a.runOp("checkout "+ref.Name, func(ctx context.Context) (string, error) {
 				return a.svc.Checkout(ctx, refIdentity(ref))
 			})
 		}},
-	}
-	if !pushed {
-		out = append(out, choice{label: i18n.S("推送标签到 origin", "push tag"), action: func(a *App) tea.Cmd {
+		{label: i18n.S("推送标签到 origin", "push tag"), action: func(a *App) tea.Cmd {
 			return a.pushTag(ref)
-		}})
-	}
-	out = append(out, choice{label: i18n.S("删除标签", "delete tag"), action: func(a *App) tea.Cmd {
-		return a.sidebarDelete(&sideItem{kind: sideTag, ref: ref})
-	}})
-	if pushed {
-		name := ref.Name
-		out = append(out, choice{label: i18n.S("删除远端标签（origin）", "delete remote tag (origin)"), action: func(a *App) tea.Cmd {
+		}},
+		{label: i18n.S("删除标签", "delete tag"), action: func(a *App) tea.Cmd {
+			return a.sidebarDelete(&sideItem{kind: sideTag, ref: ref})
+		}},
+		{label: i18n.S("删除远端标签（origin）", "delete remote tag (origin)"), action: func(a *App) tea.Cmd {
 			a.confirm(i18n.S("删除远端标签 "+name, "delete remote tag "+name),
 				i18n.S("会从 origin 删除该标签，不可恢复。", "Deletes the tag from origin; this cannot be undone."),
 				"git push origin :refs/tags/"+name, true, func(a *App) tea.Cmd {
@@ -135,29 +128,10 @@ func (a *App) tagMenuChoices(ref git.Ref, pushed bool) []choice {
 					})
 				})
 			return nil
-		}})
-	}
-	out = append(out, choice{label: i18n.S("复制名称", "copy name"), action: func(a *App) tea.Cmd {
-		return a.copyToClipboard(ref.Name)
-	}})
-	return out
-}
-
-// remoteTagMsg 是远端标签存在性检查结果。
-type remoteTagMsg struct {
-	name   string
-	exists bool
-	err    error
-}
-
-// checkRemoteTagCmd 异步检查 origin 上是否已有该标签，菜单已立即展示。
-func (a *App) checkRemoteTagCmd(name string) tea.Cmd {
-	svc := a.svc
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		out, err := svc.RunGitArgs(ctx, []string{"ls-remote", "--tags", "--refs", "origin", "refs/tags/" + name})
-		return remoteTagMsg{name: name, exists: strings.TrimSpace(out) != "", err: err}
+		}},
+		{label: i18n.S("复制名称", "copy name"), action: func(a *App) tea.Cmd {
+			return a.copyToClipboard(ref.Name)
+		}},
 	}
 }
 
@@ -314,7 +288,7 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 			}},
 		}
 	case sideTag:
-		return a.tagMenuChoices(ref, false)
+		return a.tagMenuChoices(ref)
 	case sideProject:
 		var out []choice
 		if it.project.Path != a.currentPath {
@@ -355,9 +329,54 @@ func (a *App) branchMenuChoices(it *sideItem) []choice {
 	return nil
 }
 
+// commitUnpushed 判断提交是否只在本地：从当前 HEAD 可达，且不从任何远端引用可达。
+func (a *App) commitUnpushed(c *git.Commit) bool {
+	if c == nil || c.Hash == "" || a.status.Detached || a.status.Branch == "" || a.status.OID == "" {
+		return false
+	}
+	byHash := make(map[string]*git.Commit, len(a.commits))
+	for i := range a.commits {
+		byHash[a.commits[i].Hash] = &a.commits[i]
+	}
+	reachable := func(starts []string) map[string]bool {
+		seen := map[string]bool{}
+		stack := append([]string(nil), starts...)
+		for len(stack) > 0 {
+			h := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if h == "" || seen[h] {
+				continue
+			}
+			seen[h] = true
+			if cm := byHash[h]; cm != nil {
+				stack = append(stack, cm.Parents...)
+			}
+		}
+		return seen
+	}
+	if !reachable([]string{a.status.OID})[c.Hash] {
+		return false
+	}
+	var remoteTips []string
+	for _, r := range a.refs {
+		if r.Kind == git.RefRemote && r.Target != "" {
+			remoteTips = append(remoteTips, r.Target)
+		}
+	}
+	if len(remoteTips) == 0 {
+		return a.status.Upstream != ""
+	}
+	return !reachable(remoteTips)[c.Hash]
+}
+
 // commitMenuChoices 是提交上下文菜单。
 func (a *App) commitMenuChoices(c *git.Commit) []choice {
 	var out []choice
+	if a.commitUnpushed(c) {
+		out = append(out, choice{label: i18n.S("推送当前分支", "push current branch"), action: func(a *App) tea.Cmd {
+			return a.push()
+		}})
+	}
 	if a.filter == "" && a.searchResults == nil {
 		if n := a.commitSelectionCount(); n >= 2 {
 			out = append(out, choice{label: fmt.Sprintf(i18n.S("合并 %d 个提交", "squash %d commits"), n), action: func(a *App) tea.Cmd {

@@ -2053,8 +2053,8 @@ func TestHelpProjectInfoFirst(t *testing.T) {
 	}
 }
 
-// TestTagMenuHidesPushedPush 远端已存在的标签不再显示推送，且保留删除入口。
-func TestTagMenuHidesPushedPush(t *testing.T) {
+// TestTagMenuFixedActions 标签菜单固定展示推送与删除入口，不再异步查询远端状态。
+func TestTagMenuFixedActions(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.pane = PaneBranches
 	for i, it := range a.sideItems {
@@ -2064,9 +2064,12 @@ func TestTagMenuHidesPushedPush(t *testing.T) {
 			break
 		}
 	}
-	_ = a.openContextMenu()
+	cmd := a.openContextMenu()
 	if a.modal == nil {
 		t.Fatal("标签菜单应立即打开")
+	}
+	if cmd != nil {
+		t.Fatal("标签菜单不应再异步查询远端状态")
 	}
 	has := func(list []choice, sub string) bool {
 		for _, c := range list {
@@ -2076,19 +2079,10 @@ func TestTagMenuHidesPushedPush(t *testing.T) {
 		}
 		return false
 	}
-	if !has(a.modal.choices, "删除标签") {
-		t.Fatalf("菜单缺少删除标签: %+v", a.modal.choices)
-	}
-	a.Update(remoteTagMsg{name: "v1.0", exists: true})
-	if has(a.modal.choices, "推送标签") {
-		t.Fatalf("已推送标签仍显示推送项: %+v", a.modal.choices)
-	}
-	if !has(a.modal.choices, "删除标签") || !has(a.modal.choices, "删除远端标签") {
-		t.Fatalf("已推送标签缺少删除入口: %+v", a.modal.choices)
-	}
-	a.Update(remoteTagMsg{name: "v1.0", exists: false})
-	if !has(a.modal.choices, "推送标签") {
-		t.Fatalf("远端不存在时应显示推送项: %+v", a.modal.choices)
+	for _, want := range []string{"推送标签", "删除标签", "删除远端标签"} {
+		if !has(a.modal.choices, want) {
+			t.Fatalf("标签菜单缺少固定项 %q: %+v", want, a.modal.choices)
+		}
 	}
 }
 
@@ -3016,6 +3010,15 @@ func TestOverlayKeepsBackgroundColors(t *testing.T) {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("内容缺失 %q: %q", want, plain)
 		}
+	}
+}
+
+// TestOverlayResetsUnderlyingStyle 浮层内容前要复位底层 SGR，避免继承行颜色。
+func TestOverlayResetsUnderlyingStyle(t *testing.T) {
+	base := "[31mRED[0m"
+	out := overlayBox(base, []string{"[BOX]"}, 0, 0, 20)
+	if !strings.Contains(out, "[0m[BOX]") {
+		t.Fatalf("浮层未复位底层颜色: %q", out)
 	}
 }
 

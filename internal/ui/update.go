@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ssk-wh/gitc/internal/git"
 	"github.com/ssk-wh/gitc/internal/graph"
@@ -249,37 +250,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, a.loadWorktreesCmd())
 		}
 		return a, tea.Batch(cmds...)
-
-	case remoteTagMsg:
-		if m.err == nil {
-			a.remoteTagCache[m.name] = m.exists
-		}
-		if a.modal == nil || a.modal != a.tagMenuModal || a.tagMenuName != m.name {
-			return a, nil
-		}
-		var ref git.Ref
-		found := false
-		for _, r := range a.refs {
-			if r.Kind == git.RefTag && r.Name == m.name {
-				ref, found = r, true
-				break
-			}
-		}
-		if !found {
-			return a, nil
-		}
-		pushed := m.exists && m.err == nil
-		a.modal.choices = a.tagMenuChoices(ref, pushed)
-		if a.modal.sel >= len(a.modal.choices) {
-			a.modal.sel = len(a.modal.choices) - 1
-		}
-		if a.modal.sel < 0 {
-			a.modal.sel = 0
-		}
-		if m.err != nil {
-			a.setToast(i18n.S("检查远端失败，仍可尝试推送: ", "remote check failed, push is still available: ")+firstLine(m.err.Error()), true)
-		}
-		return a, nil
 
 	case dirPickedMsg:
 		switch {
@@ -549,7 +519,7 @@ func (a *App) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.detail.offset = 1 << 30
 		a.clampOverlayScroll()
 		return a, nil
-	case "R":
+	case "R", "f5":
 		a.setToast(i18n.S("刷新中…", "refreshing…"), false)
 		return a, tea.Batch(a.refreshCmd(false), a.reloadLogCmd())
 	case "tab", "right":
@@ -2111,13 +2081,16 @@ func (a *App) choiceMenuBox() ([]string, int, int) {
 	} else {
 		title = truncate(title, w-4)
 	}
+	// 菜单边框与文字显式着色，避免继承下方主界面行的文字颜色。
+	borderStyle := lipgloss.NewStyle().Foreground(colorBorder)
+	rowStyle := lipgloss.NewStyle().Foreground(colorFg)
 	// 标题右侧用横线填充（而非空格），与区域边框的 ─── 样式一致。
 	fillTitle := w - 4 - strWidth(title)
 	if fillTitle < 0 {
 		fillTitle = 0
 	}
 	top := "╭─ " + title + " " + strings.Repeat("─", fillTitle) + "─╮"
-	lines := []string{top}
+	lines := []string{borderStyle.Render(top)}
 	for i := start; i < end; i++ {
 		c := m.choices[i]
 		marker := "  "
@@ -2131,6 +2104,8 @@ func (a *App) choiceMenuBox() ([]string, int, int) {
 		row := "│ " + padRight(truncate(label, w-2), w-1) + "│"
 		if i == m.sel {
 			row = styleSel.Render(row)
+		} else {
+			row = rowStyle.Render(row)
 		}
 		lines = append(lines, row)
 	}
@@ -2143,7 +2118,7 @@ func (a *App) choiceMenuBox() ([]string, int, int) {
 			}
 		}
 	}
-	lines = append(lines, "╰"+strings.Repeat("─", w)+"╯")
+	lines = append(lines, borderStyle.Render("╰"+strings.Repeat("─", w)+"╯"))
 	boxW := w + 2
 	x := a.modalAnchorX
 	y := a.modalAnchorY + 1

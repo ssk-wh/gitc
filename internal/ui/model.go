@@ -318,9 +318,6 @@ type App struct {
 	updateBadgeX       int
 	updateBadgeW       int
 	updateHintOn       bool
-	tagMenuName        string
-	tagMenuModal       *modal
-	remoteTagCache     map[string]bool
 	projects           []projectEntry
 	projectSel         int
 	projectOff         int
@@ -421,7 +418,6 @@ func New(svc git.Service) *App {
 		commitColor:      map[string]int{},
 		branchColor:      map[string]int{},
 		commitAnchor:     -1,
-		remoteTagCache:   map[string]bool{},
 		projectBranch:    map[string]string{},
 		projectCache:     map[string]*projectCache{},
 		worktrees:        map[string][]git.Worktree{},
