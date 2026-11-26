@@ -1553,10 +1553,15 @@ func (a *App) viewHelp() string {
 			rw = 20
 		}
 		off := clampHelpOffset(a.detail.offset, len(right), viewH)
+		// 左侧品牌区整体垂直居中，让图标落在屏幕视觉中心。
+		leftTop := 0
+		if len(left) < viewH {
+			leftTop = (viewH - len(left)) / 2
+		}
 		for i := 0; i < viewH; i++ {
 			l := ""
-			if i < len(left) {
-				l = left[i]
+			if j := i - leftTop; j >= 0 && j < len(left) {
+				l = left[j]
 			}
 			r := ""
 			if off+i < len(right) {
@@ -1585,13 +1590,13 @@ func clampHelpOffset(off, total, viewH int) int {
 	return off
 }
 
-// helpLogo 是块状像素风的 gitc 字标；前三字母用弱色，c 用主文字色。
+// helpLogo 是加粗块状像素风的 gitc 字标；前三字母用弱色，c 用主文字色。
 var helpLogo = [][4]string{
-	{"████", "████", "████", "████"},
-	{"██  ", "██  ", "██  ", "██  "},
-	{"██ █", "██  ", "██  ", "██  "},
-	{"██ █", "██  ", "██  ", "██  "},
-	{"████", "████", " ██ ", "████"},
+	{"██████", "██", "██████", "██████"},
+	{"██  ██", "██", "  ██  ", "██    "},
+	{"██████", "██", "  ██  ", "██    "},
+	{"    ██", "██", "  ██  ", "██    "},
+	{"██████", "██", "  ██  ", "██████"},
 }
 
 // helpBrandLines 返回帮助页左栏：品牌图标、描述与 GitHub 信息。

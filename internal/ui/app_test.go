@@ -3195,21 +3195,28 @@ func TestHelpTwoColumnLayout(t *testing.T) {
 	a.overlay = overlayHelp
 	a.detail.offset = 0
 	v := plainView(a)
-	for _, want := range []string{"████ ████ ████ ████", "终端里的 Git 工作台", "github.com/ssk-wh/gitc", "快捷键", "↑/↓ 滚动快捷键"} {
+	for _, want := range []string{"██████ ██ ██████ ██████", "终端里的 Git 工作台", "github.com/ssk-wh/gitc", "快捷键", "↑/↓ 滚动快捷键"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("帮助页缺少 %q:\n%s", want, v)
 		}
 	}
-	// 品牌图标和快捷键标题应在同一行，说明是左右分栏而非上下堆叠。
-	found := false
-	for _, line := range strings.Split(v, string(rune(10))) {
-		if strings.Contains(line, "████ ████ ████ ████") && strings.Contains(line, "快捷键") {
-			found = true
+	// 品牌图标和快捷键区之间有分隔线，且左侧品牌区整体垂直居中。
+	lines := strings.Split(v, string(rune(10)))
+	logoLine := -1
+	for i, line := range lines {
+		if strings.Contains(line, "██████ ██ ██████ ██████") {
+			logoLine = i
+			if !strings.Contains(line, "│") {
+				t.Fatalf("帮助页未形成左右分栏:\n%s", v)
+			}
 			break
 		}
 	}
-	if !found {
-		t.Fatalf("帮助页未形成左右分栏:\n%s", v)
+	if logoLine < 0 {
+		t.Fatalf("帮助页缺少 gitc 字标:\n%s", v)
+	}
+	if logoLine < 6 {
+		t.Fatalf("左侧品牌区未垂直居中，字标行 = %d:\n%s", logoLine, v)
 	}
 }
 
