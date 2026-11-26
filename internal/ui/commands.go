@@ -503,6 +503,26 @@ func (a *App) saveWorkspace() {
 	}
 }
 
+// saveWorkspaceAll 把当前项目组写入所有项目根目录的 .gitc-workspace。
+func (a *App) saveWorkspaceAll(extra ...string) {
+	paths := a.ProjectPaths()
+	seen := map[string]bool{}
+	all := append([]string(nil), extra...)
+	for _, p := range a.projects {
+		all = append(all, p.Path)
+	}
+	for _, root := range all {
+		root = cleanProjectPath(root)
+		if root == "" || seen[root] {
+			continue
+		}
+		seen[root] = true
+		if err := workspace.Save(root, paths); err != nil && root == a.currentProjectPath {
+			a.setToast(i18n.S("写入 .gitc-workspace 失败: ", "write .gitc-workspace failed: ")+firstLine(err.Error()), true)
+		}
+	}
+}
+
 // loadInitialProjects 启动时优先读取当前仓库的 .gitc-workspace。
 func (a *App) loadInitialProjects(c config.File) {
 	root := a.svc.RootPath()
@@ -911,20 +931,21 @@ func (a *App) chooseProjectDir(dir string) tea.Cmd {
 	}
 	a.projects = append(a.projects, projectEntry{Name: filepath.Base(p), Path: p})
 	a.saveConfig()
-	a.saveWorkspace()
+	a.saveWorkspaceAll()
 	a.rebuildSidebar()
 	a.modal = nil
 	a.setToast(i18n.S("已添加项目 "+p, "project added: "+p), false)
 	return tea.Batch(a.loadProjectBranchesCmd(), a.loadWorktreesCmd())
 }
 
-// removeProject 从列表移除项目（当前项目不可移除）。
+// removeProject 从列表移除项目；移除当前项目时自动切换到剩余第一个。
 func (a *App) removeProject(p projectEntry) tea.Cmd {
-	if p.Path == a.currentPath {
-		a.setToast(i18n.S("不能移除当前项目", "cannot remove the current project"), true)
+	if len(a.projects) <= 1 {
+		a.setToast(i18n.S("至少保留一个项目", "keep at least one project"), true)
 		return nil
 	}
-	out := a.projects[:0]
+	wasCurrent := p.Path == a.currentProjectPath
+	out := make([]projectEntry, 0, len(a.projects))
 	for _, e := range a.projects {
 		if e.Path != p.Path {
 			out = append(out, e)
@@ -932,9 +953,12 @@ func (a *App) removeProject(p projectEntry) tea.Cmd {
 	}
 	a.projects = out
 	a.saveConfig()
-	a.saveWorkspace()
+	a.saveWorkspaceAll(p.Path)
 	a.rebuildSidebar()
 	a.setToast(i18n.S("已移除项目 "+p.Name, "project removed: "+p.Name), false)
+	if wasCurrent {
+		return a.switchProject(0)
+	}
 	return nil
 }
 

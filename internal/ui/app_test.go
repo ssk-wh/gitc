@@ -2899,3 +2899,37 @@ func TestWorktreeCurrentMarker(t *testing.T) {
 		t.Fatalf("当前 worktree 缺少 * 标识:\n%s", view)
 	}
 }
+
+// TestRemoveCurrentProject 当前项目也可移除，并自动切换到剩余项目。
+func TestRemoveCurrentProject(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{dirA, dirB}, dirA)
+	a.currentPath = cleanProjectPath(dirA)
+	a.currentProjectPath = cleanProjectPath(dirA)
+	next := &fakeSvc{root: dirB, status: git.Status{Branch: "dev"}}
+	a.openRepo = func(p string) (git.Service, error) { return next, nil }
+	// 菜单里必须有移除当前项目
+	a.openProjectMenu(a.projectIndex(cleanProjectPath(dirA)))
+	found := false
+	for _, c := range a.modal.choices {
+		if strings.Contains(c.label, "移除项目") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("当前项目菜单缺少移除项: %+v", a.modal.choices)
+	}
+	a.removeProject(a.projects[0])
+	if len(a.projects) != 1 || a.projects[0].Path != cleanProjectPath(dirB) {
+		t.Fatalf("移除后项目 = %+v", a.projects)
+	}
+	if a.currentPath != cleanProjectPath(dirB) {
+		t.Fatalf("未自动切换项目: %q", a.currentPath)
+	}
+	// 最后一个项目不可移除
+	a.removeProject(a.projects[0])
+	if len(a.projects) != 1 {
+		t.Fatal("最后一个项目不应被移除")
+	}
+}

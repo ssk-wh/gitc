@@ -752,11 +752,9 @@ func (a *App) openProjectMenu(focus int) {
 			a.newWorktreePrompt(p)
 			return nil
 		}})
-		if p.Path != a.currentPath {
-			choices = append(choices, choice{label: i18n.S("移除项目 "+p.Name, "remove project "+p.Name), action: func(a *App) tea.Cmd {
-				return a.removeProject(p)
-			}})
-		}
+		choices = append(choices, choice{label: i18n.S("移除项目 "+p.Name, "remove project "+p.Name), action: func(a *App) tea.Cmd {
+			return a.removeProject(p)
+		}})
 	}
 	a.choose(title, choices)
 }
