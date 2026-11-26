@@ -274,6 +274,18 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(cmds...)
 
+	case squashMessagesMsg:
+		if m.err != nil {
+			a.setToast(firstLine(m.err.Error()), true)
+			return a, nil
+		}
+		if a.status.OID != m.head {
+			a.setToast(i18n.S("提交已变化，请刷新后重试", "commits changed; refresh and retry"), true)
+			return a, nil
+		}
+		a.openSquashPrompt(m.hashes, m.head, m.parent, m.msg)
+		return a, nil
+
 	case dirPickedMsg:
 		switch {
 		case errors.Is(m.err, platform.ErrCanceled):
@@ -2205,21 +2217,37 @@ func (a *App) modalClick(m tea.MouseMsg) tea.Cmd {
 
 // anchorMenu 为键盘打开的菜单设置锚点（靠近当前面板）。
 func (a *App) anchorMenu() {
-	l := a.panelLayout()
-	switch a.pane {
-	case PaneBranches:
-		a.modalAnchorX, a.modalAnchorY = 2, 2
-	case PaneChanges:
-		a.modalAnchorX, a.modalAnchorY = 2, l.projH+1+l.leftTopH+2
-	case PaneCommits:
-		a.modalAnchorX, a.modalAnchorY = l.leftW+3, 2
-	case PaneFiles:
-		a.modalAnchorX, a.modalAnchorY = l.leftW+3, l.rightTopH+2
-	case PaneContent:
-		a.modalAnchorX, a.modalAnchorY = l.leftW+3+a.drawerSplit(l.rightW), l.rightTopH+2
-	case PaneLog:
-		a.modalAnchorX, a.modalAnchorY = l.leftW+3, l.rightTopH+2+l.drawerH+2
+	b, ok := a.paneBoxOf(a.pane)
+	if !ok {
+		return
 	}
+	// 与鼠标右键一致：菜单锚点落在当前选中行上。
+	x := b.x + 2
+	y := b.y + 1
+	switch a.pane {
+	case PaneProjects:
+		y += a.projectSel - a.projectOff
+	case PaneBranches:
+		for i, ln := range a.sidebarLines() {
+			if ln.itemIdx == a.sideSel {
+				y += i - a.sideOff
+				break
+			}
+		}
+	case PaneChanges:
+		y += a.changeSel - a.changeOff
+	case PaneCommits:
+		y += a.graphSel - a.graphOff
+	case PaneFiles:
+		y += a.fileSel - a.fileOff
+	}
+	if y < b.y+1 {
+		y = b.y + 1
+	}
+	if max := b.y + b.h - 2; y > max {
+		y = max
+	}
+	a.modalAnchorX, a.modalAnchorY = x, y
 }
 
 // mouseClick 选中鼠标所在行；right 为 true 时只选中不执行双击动作。

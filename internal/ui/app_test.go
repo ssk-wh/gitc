@@ -227,6 +227,15 @@ func (f *fakeSvc) RevParse(ctx context.Context, ref string) (string, error) {
 	return "abc1234", nil
 }
 func (f *fakeSvc) CurrentBranch(context.Context) string { return f.status.Branch }
+func (f *fakeSvc) CommitMessage(ctx context.Context, sha string) (string, error) {
+	for _, c := range f.commits {
+		if c.Hash == sha {
+			return c.Subject + string(rune(10)) + string(rune(10)) + "body-" + c.Short, nil
+		}
+	}
+	return "", nil
+}
+
 func (f *fakeSvc) CommitFiles(context.Context, string) ([]git.CommitFile, error) {
 	return []git.CommitFile{
 		{Status: "M", Path: "a.txt"},
@@ -3195,7 +3204,7 @@ func TestHelpTwoColumnLayout(t *testing.T) {
 	a.overlay = overlayHelp
 	a.detail.offset = 0
 	v := plainView(a)
-	for _, want := range []string{"██████ ██ ██████ ██████", "终端里的 Git 工作台", "https://github.com/ssk-wh/gitc", "https://github.com/ssk-wh/gitc/releases", "https://github.com/ssk-wh/gitc/issues", "快捷键", "↑/↓ 滚动快捷键"} {
+	for _, want := range []string{"██████ ██ ██████ ██████", "终端里的 Git 工作台", "https://github.com/ssk-wh/gitc", "https://github.com/ssk-wh/gitc/releases", "https://github.com/ssk-wh/gitc/issues", "↑/↓ 滚动快捷键"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("帮助页缺少 %q:\n%s", want, v)
 		}
@@ -3230,5 +3239,52 @@ func TestHelpNarrowFallsBack(t *testing.T) {
 		if !strings.Contains(v, want) {
 			t.Fatalf("窄屏帮助页缺少 %q:\n%s", want, v)
 		}
+	}
+}
+
+// TestHelpKeysVerticallyCentered verifies the key list is vertically centered in two-column help.
+func TestHelpKeysVerticallyCentered(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a.overlay = overlayHelp
+	lines := strings.Split(plainView(a), string(rune(10)))
+	for _, line := range lines {
+		if strings.Contains(line, "│ 快捷键") {
+			t.Fatal("help key list should not have a header")
+		}
+	}
+	for i, line := range lines {
+		if strings.Contains(line, "│") && strings.Contains(line, "↑↓") {
+			if i < 2 {
+				t.Fatalf("key list not vertically centered: line=%d\n%s", i, strings.Join(lines, string(rune(10))))
+			}
+			return
+		}
+	}
+	t.Fatal("key list not found")
+}
+
+// TestSquashPromptIncludesAllCommitMessages 合并编辑框应包含所有选中提交的标题和正文。
+func TestSquashPromptIncludesAllCommitMessages(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.status.Staged = nil
+	a.commitAnchor = a.dirtyOffset()
+	a.graphSel = a.dirtyOffset() + 1
+	cmd := a.squashPrompt()
+	if cmd == nil {
+		t.Fatal("squashPrompt 未返回加载命令")
+	}
+	pump(t, a, cmd)
+	if a.modal == nil || a.modal.kind != modalText {
+		t.Fatalf("未打开提交信息编辑框: %+v", a.modal)
+	}
+	v := a.modal.text.Value()
+	for _, want := range []string{"支持摄像头分辨率", "body-bbbbbbb", "修复切换音频崩溃", "body-aaaaaaa"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("合并编辑框缺少 %q: %q", want, v)
+		}
+	}
+	if strings.Index(v, "支持摄像头分辨率") > strings.Index(v, "修复切换音频崩溃") {
+		t.Fatalf("提交信息应按从旧到新排列: %q", v)
 	}
 }
