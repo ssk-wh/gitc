@@ -2715,3 +2715,44 @@ func TestWorktreeMenu(t *testing.T) {
 		t.Fatalf("子 worktree 缺少移除项: %+v", a.modal.choices)
 	}
 }
+
+// TestWorktreesMsgExpands 加载 worktree 后默认展开，并保留项目选中。
+func TestWorktreesMsgExpands(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root, wt := t.TempDir(), t.TempDir()
+	a.SetProjects([]string{root}, root)
+	a.currentPath = cleanProjectPath(root)
+	a.currentProjectPath = cleanProjectPath(root)
+	a.Update(worktreesMsg{list: map[string][]git.Worktree{
+		cleanProjectPath(root): {
+			{Path: cleanProjectPath(root), Branch: "main", Main: true},
+			{Path: cleanProjectPath(wt), Branch: "wt-branch"},
+		},
+	}})
+	if rows := a.projectRows(); len(rows) != 3 {
+		t.Fatalf("worktree 未默认展开: %+v", rows)
+	}
+	if a.projectSel != 0 {
+		t.Fatalf("项目选中行 = %d", a.projectSel)
+	}
+	v := plainView(a)
+	if !strings.Contains(v, "wt-branch") {
+		t.Fatalf("视图缺少 worktree 分支: %s", v)
+	}
+}
+
+// TestNewWorktreePrompt 新建 worktree 输入框为两行并带默认值。
+func TestNewWorktreePrompt(t *testing.T) {
+	a, _ := newFakeApp(t)
+	p := projectEntry{Name: "demo", Path: cleanProjectPath(t.TempDir())}
+	a.newWorktreePrompt(p)
+	if a.modal == nil || a.modal.kind != modalText {
+		t.Fatalf("未打开 worktree 输入框: %+v", a.modal)
+	}
+	if h := a.modal.text.Height(); h != 2 {
+		t.Fatalf("输入框高度 = %d", h)
+	}
+	if v := a.modal.text.Value(); !strings.Contains(v, "demo-wt") || !strings.Contains(v, "wt/demo") {
+		t.Fatalf("默认值 = %q", v)
+	}
+}
