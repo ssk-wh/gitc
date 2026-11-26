@@ -17,3 +17,4 @@ tmp/
 # Windows bash 崩溃转储
 bash.exe.stackdump
 /.gitc-workspace
+/.claude/worktrees/
