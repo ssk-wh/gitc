@@ -3235,7 +3235,7 @@ func TestHelpNarrowFallsBack(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	a.overlay = overlayHelp
 	v := plainView(a)
-	for _, want := range []string{"项目信息", "https://github.com/ssk-wh/gitc", "快捷键", "↑↓"} {
+	for _, want := range []string{"██████ ██ ██████ ██████", "项目信息", "https://github.com/ssk-wh/gitc", "快捷键", "↑↓"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("窄屏帮助页缺少 %q:\n%s", want, v)
 		}

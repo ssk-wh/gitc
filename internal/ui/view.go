@@ -1603,14 +1603,20 @@ var helpLogo = [][4]string{
 	{"██████", "██", "  ██  ", "██████"},
 }
 
-// helpBrandLines 返回帮助页左栏：品牌图标、描述与 GitHub 信息。
-func helpBrandLines() []string {
-	lines := []string{}
+// helpLogoLines 渲染块状像素 Gitc 字标。
+func helpLogoLines() []string {
+	lines := make([]string, 0, len(helpLogo))
 	for _, row := range helpLogo {
 		line := "  " + styleTitle.Render(row[0]) + " " + styleTitle.Render(row[1]) + " " +
 			styleTitle.Render(row[2]) + " " + styleSel.Render(row[3])
 		lines = append(lines, line)
 	}
+	return lines
+}
+
+// helpBrandLines 返回帮助页左栏：品牌图标、描述与 GitHub 信息。
+func helpBrandLines() []string {
+	lines := helpLogoLines()
 	lines = append(lines, "",
 		"  "+styleTitle.Render(i18n.S("终端里的 Git 工作台", "a fast terminal Git workspace")),
 		"  "+styleDim.Render(i18n.S("流式加载 · 键鼠操作 · 跨平台", "streaming · mouse & keyboard · cross-platform")),
@@ -1677,17 +1683,21 @@ func helpRows() [][2]string {
 
 // helpLines 是窄屏 / 兼容用的单栏帮助内容。
 func helpLines() []string {
-	lines := []string{
-		"  " + styleTitle.Render(i18n.S("项目信息", "Project")),
-		"  " + styleAccent.Render(padRight("GitHub", 12)) + "https://github.com/ssk-wh/gitc",
-		"  " + styleAccent.Render(padRight(i18n.S("发布页", "Releases"), 12)) + "https://github.com/ssk-wh/gitc/releases",
-		"  " + styleAccent.Render(padRight(i18n.S("问题反馈", "Issues"), 12)) + "https://github.com/ssk-wh/gitc/issues",
-		"  " + styleAccent.Render(padRight(i18n.S("升级", "Update"), 12)) + i18n.S("gitc --update（或重新运行安装脚本）", "gitc --update (or rerun the installer)"),
+	lines := helpLogoLines()
+	lines = append(lines, "",
+		"  "+styleTitle.Render(i18n.S("终端里的 Git 工作台", "a fast terminal Git workspace")),
+		"  "+styleDim.Render(i18n.S("流式加载 · 键鼠操作 · 跨平台", "streaming · mouse & keyboard · cross-platform")),
 		"",
-		"  " + styleDim.Render(strings.Repeat("─", 64)),
+		"  "+styleTitle.Render(i18n.S("项目信息", "Project")),
+		"  "+styleAccent.Render(padRight("GitHub", 12))+"https://github.com/ssk-wh/gitc",
+		"  "+styleAccent.Render(padRight(i18n.S("发布页", "Releases"), 12))+"https://github.com/ssk-wh/gitc/releases",
+		"  "+styleAccent.Render(padRight(i18n.S("问题反馈", "Issues"), 12))+"https://github.com/ssk-wh/gitc/issues",
+		"  "+styleAccent.Render(padRight(i18n.S("升级", "Update"), 12))+i18n.S("gitc --update（或重新运行安装脚本）", "gitc --update (or rerun the installer)"),
 		"",
-		"  " + styleTitle.Render(i18n.S("快捷键", "Keybindings")),
-	}
+		"  "+styleDim.Render(strings.Repeat("─", 64)),
+		"",
+		"  "+styleTitle.Render(i18n.S("快捷键", "Keybindings")),
+	)
 	for _, r := range helpRows() {
 		lines = append(lines, "  "+styleAccent.Render(padRight(r[0], 22))+r[1])
 	}
