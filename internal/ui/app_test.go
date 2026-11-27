@@ -3531,3 +3531,26 @@ func TestOverlayPreservesRightContentWithEmoji(t *testing.T) {
 		t.Fatalf("emoji 行右侧内容丢失: %q", out)
 	}
 }
+
+// TestMouseWheelScrollsFilesWithoutSnapping 文件多时滚轮应自由滚动，不被选中行拉回。
+func TestMouseWheelScrollsFilesWithoutSnapping(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	files := make([]fileEntry, 40)
+	for i := range files {
+		files[i] = fileEntry{path: fmt.Sprintf("file-%02d.txt", i), status: "M"}
+	}
+	a.filesOwner = "work"
+	a.setFiles(files)
+	a.pane = PaneFiles
+	a.fileSel = 0
+	a.fileOff = 0
+	a.scrollPane(PaneFiles, 3)
+	if a.fileOff != 3 {
+		t.Fatalf("滚轮未滚动文件区: off=%d", a.fileOff)
+	}
+	_ = a.View()
+	if a.fileOff != 3 {
+		t.Fatalf("渲染时文件区被选中行拉回: off=%d", a.fileOff)
+	}
+}

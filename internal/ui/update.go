@@ -55,6 +55,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width, a.height = m.Width, m.Height
 		a.clampSelection()
 		a.ensureSideVisible()
+		a.ensureFileVisible()
+		a.ensureChangeVisible()
 		return a, nil
 
 	case tea.KeyMsg:

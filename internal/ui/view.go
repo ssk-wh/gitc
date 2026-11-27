@@ -926,12 +926,6 @@ func treeLines(rows []fileRow, expanded map[string]bool, sel int, off *int, widt
 	if *off < 0 {
 		*off = 0
 	}
-	if sel < *off {
-		*off = sel
-	}
-	if sel >= *off+height {
-		*off = sel - height + 1
-	}
 	out := make([]string, 0, height)
 	if len(rows) == 0 {
 		out = append(out, styleDim.Render(i18n.S("（没有文件）", "  (no files)")))
