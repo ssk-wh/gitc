@@ -3512,3 +3512,22 @@ func TestAddProjectPickerShowsRootError(t *testing.T) {
 		t.Fatalf("选择器未提示仓库根目录: %+v", a.modal)
 	}
 }
+
+// TestSplitStyledEmojiAlignment 按 grapheme 切分，避免组合 emoji 导致右侧列错位。
+func TestSplitStyledEmojiAlignment(t *testing.T) {
+	line := strings.Repeat("a", 8) + "👨‍👩‍👧‍👦" + strings.Repeat("b", 20) + "DATE"
+	_, right, _ := splitStyled(line, 10, 20)
+	want := ansi.Cut(line, 20, ansi.StringWidth(line))
+	if ansi.Strip(right) != ansi.Strip(want) {
+		t.Fatalf("emoji 右侧切分错位: got=%q want=%q", ansi.Strip(right), ansi.Strip(want))
+	}
+}
+
+// TestOverlayPreservesRightContentWithEmoji 菜单覆盖含 emoji 的行时，右侧内容不能丢。
+func TestOverlayPreservesRightContentWithEmoji(t *testing.T) {
+	line := strings.Repeat("👨‍👩‍👧‍👦", 3) + strings.Repeat("x", 20) + "RIGHT"
+	out := ansi.Strip(overlayBox(line, []string{"[BOX]"}, 2, 0, 100))
+	if !strings.Contains(out, "RIGHT") {
+		t.Fatalf("emoji 行右侧内容丢失: %q", out)
+	}
+}

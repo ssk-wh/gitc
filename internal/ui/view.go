@@ -112,66 +112,56 @@ func (a *App) baseView() string {
 }
 
 // splitStyled 把一行按显示列切成左段、右段，并记录右段起始处仍生效的 SGR。
+// 使用 ansi.Cut 按 grapheme/宽字符切分，避免 emoji 组合字符导致列数错位。
 func splitStyled(s string, left, right int) (string, string, int) {
-	var before, after strings.Builder
-	active := ""
-	col := 0
-	i := 0
-	writingRight := false
-	appendRight := func(tok string) {
-		if !writingRight {
-			writingRight = true
-			after.WriteString(active)
-		}
-		after.WriteString(tok)
+	width := ansi.StringWidth(s)
+	before := ansi.Cut(s, 0, left)
+	after := ansi.Cut(s, right, width)
+	if after != "" {
+		after = activeSGR(ansi.Cut(s, 0, right)) + after
 	}
-	for i < len(s) {
-		if s[i] == 0x1b {
-			j := i + 1
-			if j < len(s) && s[j] == '[' {
-				j++
-				for j < len(s) && !(s[j] >= 0x40 && s[j] <= 0x7e) {
-					j++
-				}
-				if j < len(s) {
-					j++
-				}
-			} else {
-				j++
+	return before, after, right
+}
+
+// activeSGR 返回字符串末尾仍生效的 SGR 序列。
+func activeSGR(s string) string {
+	active := ""
+	for i := 0; i < len(s); {
+		if s[i] != 0x1b {
+			_, size := utf8.DecodeRuneInString(s[i:])
+			if size < 1 {
+				size = 1
 			}
-			seq := s[i:j]
-			if strings.HasSuffix(seq, "m") {
-				params := strings.TrimSuffix(strings.TrimPrefix(seq, string(rune(27))+"["), "m")
-				switch {
-				case params == "" || params == "0":
-					active = ""
-				case strings.HasPrefix(params, "0;"):
-					active = string(rune(27)) + "[" + strings.TrimPrefix(params, "0;") + "m"
-				default:
-					active += seq
-				}
-			}
-			if col < left {
-				before.WriteString(seq)
-			} else if col >= right {
-				appendRight(seq)
-			}
-			i = j
+			i += size
 			continue
 		}
-		r, size := utf8.DecodeRuneInString(s[i:])
-		w := runewidth.RuneWidth(r)
-		tok := s[i : i+size]
-		switch {
-		case col+w <= left:
-			before.WriteString(tok)
-		case col >= right:
-			appendRight(tok)
+		j := i + 1
+		if j < len(s) && s[j] == '[' {
+			j++
+			for j < len(s) && !(s[j] >= 0x40 && s[j] <= 0x7e) {
+				j++
+			}
+			if j < len(s) {
+				j++
+			}
+		} else {
+			j++
 		}
-		col += w
-		i += size
+		seq := s[i:j]
+		if strings.HasSuffix(seq, "m") {
+			params := strings.TrimSuffix(strings.TrimPrefix(seq, string(rune(27))+"["), "m")
+			switch {
+			case params == "" || params == "0":
+				active = ""
+			case strings.HasPrefix(params, "0;"):
+				active = string(rune(27)) + "[" + strings.TrimPrefix(params, "0;") + "m"
+			default:
+				active += seq
+			}
+		}
+		i = j
 	}
-	return before.String(), after.String(), col
+	return active
 }
 
 // overlayBox 把一个浮层按列叠加到 base 上，保留左右内容的颜色。
