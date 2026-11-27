@@ -130,12 +130,8 @@ func Run(ctx context.Context, opts Options) error {
 	tmpName := tmp.Name()
 	tmp.Close()
 	defer os.Remove(tmpName)
-	data, err := fetchBytes(ctx, opts, url)
-	if err != nil {
+	if err := downloadFile(ctx, opts, url, tmpName); err != nil {
 		return fmt.Errorf("下载失败: %w", err)
-	}
-	if err := os.WriteFile(tmpName, data, 0o755); err != nil {
-		return err
 	}
 
 	sumURL := fmt.Sprintf("%s/%s/releases/download/%s/SHA256SUMS", opts.BaseURL, opts.Repo, tag)
@@ -311,6 +307,95 @@ func withMirror(u, mirror string) []string {
 		out = append(out, mirror+u)
 	}
 	return out
+}
+
+type progressWriter struct {
+	w       io.Writer
+	out     io.Writer
+	total   int64
+	written int64
+	last    time.Time
+}
+
+func (p *progressWriter) Write(b []byte) (int, error) {
+	n, err := p.w.Write(b)
+	p.written += int64(n)
+	if p.total > 0 && (p.last.IsZero() || time.Since(p.last) >= 100*time.Millisecond) {
+		p.print()
+		p.last = time.Now()
+	}
+	return n, err
+}
+
+func (p *progressWriter) print() {
+	if p.total > 0 {
+		fmt.Fprintf(p.out, "下载 %5.1f%%  %s / %s", 100*float64(p.written)/float64(p.total), humanBytes(p.written), humanBytes(p.total))
+	} else {
+		fmt.Fprintf(p.out, "下载 %s", humanBytes(p.written))
+	}
+}
+
+func (p *progressWriter) done() {
+	if p.written > 0 {
+		p.print()
+		fmt.Fprintln(p.out)
+	}
+}
+
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	units := []string{"KB", "MB", "GB", "TB"}
+	v := float64(n)
+	i := -1
+	for v >= unit && i+1 < len(units) {
+		v /= unit
+		i++
+	}
+	return fmt.Sprintf("%.1f %s", v, units[i])
+}
+
+// downloadFile 下载资产到目标文件，按 Content-Length 显示进度。
+func downloadFile(ctx context.Context, opts Options, url, dst string) error {
+	var last error
+	for _, candidate := range withMirror(url, opts.Mirror) {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, candidate, nil)
+		req.Header.Set("User-Agent", "gitc-updater")
+		resp, err := opts.Client.Do(req)
+		if err != nil {
+			last = err
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			last = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
+		}
+		f, err := os.Create(dst)
+		if err != nil {
+			resp.Body.Close()
+			return err
+		}
+		pw := &progressWriter{w: f, out: opts.Out, total: resp.ContentLength}
+		_, copyErr := io.Copy(pw, resp.Body)
+		resp.Body.Close()
+		closeErr := f.Close()
+		if copyErr == nil && closeErr == nil {
+			pw.done()
+			return nil
+		}
+		if copyErr != nil {
+			last = copyErr
+		} else {
+			last = closeErr
+		}
+	}
+	if last == nil {
+		last = errors.New("下载失败")
+	}
+	return last
 }
 
 func fetchBytes(ctx context.Context, opts Options, url string) ([]byte, error) {

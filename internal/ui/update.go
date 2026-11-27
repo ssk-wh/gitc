@@ -1149,14 +1149,14 @@ func (a *App) handleGraphKey(k tea.KeyMsg) (cmd tea.Cmd, handled bool) {
 		if c == nil {
 			return nil, true
 		}
-		a.choose(i18n.S("reset 当前分支到 "+c.Short, "reset current branch to "+c.Short), []choice{
-			{label: "soft", desc: i18n.S("保留索引与工作区", "keep index and worktree"), action: func(a *App) tea.Cmd {
+		a.choose(i18n.S("重置当前分支到 "+c.Short, "reset current branch to "+c.Short), []choice{
+			{label: i18n.S("软重置（soft）", "soft"), desc: i18n.S("保留索引与工作区", "keep index and worktree"), action: func(a *App) tea.Cmd {
 				return a.doReset(c.Hash, git.ResetSoft)
 			}},
-			{label: "mixed", desc: i18n.S("保留工作区，清空索引", "keep worktree, reset index"), action: func(a *App) tea.Cmd {
+			{label: i18n.S("混合重置（mixed）", "mixed"), desc: i18n.S("保留工作区，清空索引", "keep worktree, reset index"), action: func(a *App) tea.Cmd {
 				return a.doReset(c.Hash, git.ResetMixed)
 			}},
-			{label: "hard", desc: i18n.S("丢弃索引与工作区改动（危险）", "discard all changes (dangerous)"), action: func(a *App) tea.Cmd {
+			{label: i18n.S("硬重置（hard）", "hard"), desc: i18n.S("丢弃索引与工作区改动（危险）", "discard all changes (dangerous)"), action: func(a *App) tea.Cmd {
 				return a.doReset(c.Hash, git.ResetHard)
 			}},
 		})

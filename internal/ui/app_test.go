@@ -1223,17 +1223,17 @@ func TestMenuSubmenuClick(t *testing.T) {
 	a.openContextMenu()
 	idx := -1
 	for i, c := range a.modal.choices {
-		if c.label == "reset" {
+		if strings.Contains(c.label, "重置") {
 			idx = i
 		}
 	}
 	if idx < 0 {
-		t.Fatal("提交菜单缺少 reset")
+		t.Fatal("提交菜单缺少重置")
 	}
 	_, x, y := a.choiceMenuBox()
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x + 2, Y: y + 1 + idx})
-	if a.modal == nil || a.modal.kind != modalChoice || !strings.Contains(a.modal.title, "reset") {
-		t.Fatalf("点击 reset 应打开子菜单: %+v", a.modal)
+	if a.modal == nil || a.modal.kind != modalChoice || !strings.Contains(a.modal.title, "重置") {
+		t.Fatalf("点击重置应打开子菜单: %+v", a.modal)
 	}
 }
 
@@ -1802,11 +1802,14 @@ func TestCommitRowShowsBranchAndTag(t *testing.T) {
 			continue
 		}
 		found = true
-		if !strings.Contains(line, "[*main]") {
+		if !strings.Contains(line, "[*main|origin]") {
 			t.Errorf("提交行缺少分支徽标: %q", line)
 		}
 		if !strings.Contains(line, "[v9.9]") {
 			t.Errorf("提交行缺少 tag 徽标: %q", line)
+		}
+		if strings.Index(line, "[*main|origin]") > strings.Index(line, "[v9.9]") {
+			t.Errorf("分支徽标应排在 tag 前: %q", line)
 		}
 	}
 	if !found {
