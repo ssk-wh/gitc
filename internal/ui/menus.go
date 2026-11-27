@@ -409,19 +409,19 @@ func (a *App) commitMenuChoices(c *git.Commit) []choice {
 			a.tagPrompt(c)
 			return nil
 		}},
-		{label: "cherry-pick", action: func(a *App) tea.Cmd {
+		{label: i18n.S("拣选提交（cherry-pick）", "cherry-pick"), action: func(a *App) tea.Cmd {
 			a.cherryPickPrompt(c)
 			return nil
 		}},
-		{label: "revert", action: func(a *App) tea.Cmd {
+		{label: i18n.S("撤销提交（revert）", "revert"), action: func(a *App) tea.Cmd {
 			a.revertPrompt(c)
 			return nil
 		}},
-		{label: "reset", action: func(a *App) tea.Cmd {
-			a.choose(i18n.S("reset 当前分支到 "+c.Short, "reset current to "+c.Short), []choice{
-				{label: "soft", action: func(a *App) tea.Cmd { return a.doReset(c.Hash, git.ResetSoft) }},
-				{label: "mixed", action: func(a *App) tea.Cmd { return a.doReset(c.Hash, git.ResetMixed) }},
-				{label: "hard", action: func(a *App) tea.Cmd { return a.doReset(c.Hash, git.ResetHard) }},
+		{label: i18n.S("重置（reset）", "reset"), action: func(a *App) tea.Cmd {
+			a.choose(i18n.S("重置当前分支到 "+c.Short, "reset current to "+c.Short), []choice{
+				{label: i18n.S("软重置（soft）", "soft"), action: func(a *App) tea.Cmd { return a.doReset(c.Hash, git.ResetSoft) }},
+				{label: i18n.S("混合重置（mixed）", "mixed"), action: func(a *App) tea.Cmd { return a.doReset(c.Hash, git.ResetMixed) }},
+				{label: i18n.S("硬重置（hard）", "hard"), action: func(a *App) tea.Cmd { return a.doReset(c.Hash, git.ResetHard) }},
 			})
 			return nil
 		}},
@@ -441,8 +441,19 @@ func (a *App) commitMenuChoices(c *git.Commit) []choice {
 // fileNodeMenuChoices 根据节点下所有条目生成菜单：
 // 同时存在已暂存/未暂存条目时，两个操作都提供，避免状态显示错误。
 func (a *App) fileNodeMenuChoices(n *fileNode, working bool) []choice {
-	if n == nil || !working {
+	if n == nil {
 		return nil
+	}
+	if !working {
+		path := n.path
+		return []choice{
+			{label: i18n.S("在文件管理器中打开", "open in file manager"), action: func(a *App) tea.Cmd {
+				return a.revealLocalFile(path)
+			}},
+			{label: i18n.S("复制路径", "copy path"), action: func(a *App) tea.Cmd {
+				return a.copyToClipboard(path)
+			}},
+		}
 	}
 	var hasStaged, hasUnstaged, untracked bool
 	var pick fileEntry
@@ -493,6 +504,16 @@ func (a *App) fileNodeMenuChoices(n *fileNode, working bool) []choice {
 }
 
 func (a *App) fileMenuChoices(f fileEntry, working bool) []choice {
+	if !working {
+		return []choice{
+			{label: i18n.S("在文件管理器中打开", "open in file manager"), action: func(a *App) tea.Cmd {
+				return a.revealLocalFile(f.path)
+			}},
+			{label: i18n.S("复制路径", "copy path"), action: func(a *App) tea.Cmd {
+				return a.copyToClipboard(f.path)
+			}},
+		}
+	}
 	var out []choice
 	if working {
 		label := i18n.S("暂存该文件", "stage file")
@@ -1010,8 +1031,8 @@ func (a *App) openBranchesHeaderMenu() {
 			}
 			return nil
 		}},
-		{label: "fetch", action: func(a *App) tea.Cmd { return a.fetch(false) }},
-		{label: "fetch --prune", action: func(a *App) tea.Cmd { return a.fetch(true) }},
+		{label: i18n.S("抓取（fetch）", "fetch"), action: func(a *App) tea.Cmd { return a.fetch(false) }},
+		{label: i18n.S("抓取并清理（fetch --prune）", "fetch --prune"), action: func(a *App) tea.Cmd { return a.fetch(true) }},
 		{label: i18n.S("刷新", "refresh"), action: func(a *App) tea.Cmd {
 			return a.refreshCmd(false)
 		}},
@@ -1066,8 +1087,8 @@ func (a *App) openSectionMenu(section string) {
 		)
 	case "remote":
 		choices = append(choices,
-			choice{label: "fetch", action: func(a *App) tea.Cmd { return a.fetch(false) }},
-			choice{label: "fetch --prune", action: func(a *App) tea.Cmd { return a.fetch(true) }},
+			choice{label: i18n.S("抓取（fetch）", "fetch"), action: func(a *App) tea.Cmd { return a.fetch(false) }},
+			choice{label: i18n.S("抓取并清理（fetch --prune）", "fetch --prune"), action: func(a *App) tea.Cmd { return a.fetch(true) }},
 		)
 	case "tags":
 		choices = append(choices,

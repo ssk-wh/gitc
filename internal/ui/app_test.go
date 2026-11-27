@@ -1223,17 +1223,17 @@ func TestMenuSubmenuClick(t *testing.T) {
 	a.openContextMenu()
 	idx := -1
 	for i, c := range a.modal.choices {
-		if c.label == "reset" {
+		if strings.Contains(c.label, "重置") {
 			idx = i
 		}
 	}
 	if idx < 0 {
-		t.Fatal("提交菜单缺少 reset")
+		t.Fatal("提交菜单缺少重置")
 	}
 	_, x, y := a.choiceMenuBox()
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: x + 2, Y: y + 1 + idx})
-	if a.modal == nil || a.modal.kind != modalChoice || !strings.Contains(a.modal.title, "reset") {
-		t.Fatalf("点击 reset 应打开子菜单: %+v", a.modal)
+	if a.modal == nil || a.modal.kind != modalChoice || !strings.Contains(a.modal.title, "重置") {
+		t.Fatalf("点击重置应打开子菜单: %+v", a.modal)
 	}
 }
 
@@ -1802,11 +1802,14 @@ func TestCommitRowShowsBranchAndTag(t *testing.T) {
 			continue
 		}
 		found = true
-		if !strings.Contains(line, "[*main]") {
+		if !strings.Contains(line, "[*main|origin]") {
 			t.Errorf("提交行缺少分支徽标: %q", line)
 		}
 		if !strings.Contains(line, "[v9.9]") {
 			t.Errorf("提交行缺少 tag 徽标: %q", line)
+		}
+		if strings.Index(line, "[*main|origin]") > strings.Index(line, "[v9.9]") {
+			t.Errorf("分支徽标应排在 tag 前: %q", line)
 		}
 	}
 	if !found {
@@ -2022,8 +2025,8 @@ func TestHistoryRewriteUsesRequestRepo(t *testing.T) {
 	}
 }
 
-// TestNoEmptyFileMenu 查看提交文件时右键不应弹出空菜单。
-func TestNoEmptyFileMenu(t *testing.T) {
+// TestCommitFileMenu 查看提交文件时右键应提供打开本地文件与复制路径。
+func TestCommitFileMenu(t *testing.T) {
 	a, _ := newFakeApp(t)
 	a.pane = PaneCommits
 	a.graphSel = a.dirtyOffset()
@@ -2032,8 +2035,19 @@ func TestNoEmptyFileMenu(t *testing.T) {
 	a.filesOwner = "c:aaaaaaaaaaaa1111"
 	a.fileSel = 0
 	a.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: a.panelLayout().leftW + 2, Y: a.panelLayout().rightTopH + 2})
-	if a.modal != nil {
-		t.Fatalf("提交文件右键不应弹菜单，实际 %q", a.modal.title)
+	if a.modal == nil {
+		t.Fatal("提交文件右键应弹菜单")
+	}
+	for _, want := range []string{"文件管理器中打开", "复制路径"} {
+		found := false
+		for _, c := range a.modal.choices {
+			if strings.Contains(c.label, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("提交文件菜单缺少 %q: %+v", want, a.modal.choices)
+		}
 	}
 }
 
@@ -3552,5 +3566,41 @@ func TestMouseWheelScrollsFilesWithoutSnapping(t *testing.T) {
 	_ = a.View()
 	if a.fileOff != 3 {
 		t.Fatalf("渲染时文件区被选中行拉回: off=%d", a.fileOff)
+	}
+}
+
+// TestCommitFileMenuOpenLocal 提交文件右键菜单可打开本地文件/目录，找不到时提示。
+func TestCommitFileMenuOpenLocal(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := t.TempDir()
+	a.svc = &fakeSvc{root: root}
+	file := filepath.Join(root, "sub", "a.txt")
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opened := ""
+	a.openDir = func(p string) error { opened = p; return nil }
+	menu := a.fileMenuChoices(fileEntry{path: "sub/a.txt"}, false)
+	ch, ok := choiceByLabel(menu, "在文件管理器中打开")
+	if !ok {
+		t.Fatalf("提交文件菜单缺少打开入口: %+v", menu)
+	}
+	pump(t, a, ch.action(a))
+	if opened != filepath.Dir(file) {
+		t.Fatalf("打开目录 = %q，期望 %q", opened, filepath.Dir(file))
+	}
+	if _, ok := choiceByLabel(menu, "复制路径"); !ok {
+		t.Fatalf("提交文件菜单缺少复制路径: %+v", menu)
+	}
+	a.revealLocalFile("missing.txt")
+	if !strings.Contains(a.toast, "找不到") {
+		t.Fatalf("缺失文件未提示: %q", a.toast)
+	}
+	nodeMenu := a.fileNodeMenuChoices(&fileNode{path: "sub", dir: true}, false)
+	if len(nodeMenu) < 2 {
+		t.Fatalf("提交目录菜单不完整: %+v", nodeMenu)
 	}
 }

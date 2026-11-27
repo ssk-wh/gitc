@@ -1684,14 +1684,73 @@ func refOrder(kind string) int {
 	switch kind {
 	case git.RefLocal:
 		return 0
-	case git.RefTag:
-		return 1
 	case git.RefRemote:
+		return 1
+	case git.RefTag:
 		return 2
 	case git.RefStash:
 		return 3
 	}
 	return 4
+}
+
+// refBadge 是提交行上的一个引用徽标；本地分支与同名远端合并为 branch|remote。
+type refBadge struct {
+	label string
+	kind  string
+	name  string
+}
+
+// refBadges 返回提交的徽标，顺序为本地分支、远程分支、tag。
+func (a *App) refBadges(hash string) []refBadge {
+	var locals, remotes, tags []git.Ref
+	for _, r := range a.refsAt(hash) {
+		switch r.Kind {
+		case git.RefLocal:
+			locals = append(locals, r)
+		case git.RefRemote:
+			remotes = append(remotes, r)
+		case git.RefTag:
+			tags = append(tags, r)
+		}
+	}
+	sort.SliceStable(locals, func(i, j int) bool { return locals[i].Name < locals[j].Name })
+	sort.SliceStable(remotes, func(i, j int) bool { return remotes[i].Name < remotes[j].Name })
+	sort.SliceStable(tags, func(i, j int) bool { return tags[i].Name < tags[j].Name })
+	merged := make([]bool, len(remotes))
+	remoteParts := make([][]string, len(locals))
+	for ri, r := range remotes {
+		best, bestLen := -1, -1
+		for li, l := range locals {
+			if strings.HasSuffix(r.Name, "/"+l.Name) && len(l.Name) > bestLen {
+				best, bestLen = li, len(l.Name)
+			}
+		}
+		if best >= 0 {
+			if remote := strings.TrimSuffix(r.Name, "/"+locals[best].Name); remote != "" {
+				remoteParts[best] = append(remoteParts[best], remote)
+				merged[ri] = true
+			}
+		}
+	}
+	out := make([]refBadge, 0, len(locals)+len(remotes)+len(tags))
+	for li, l := range locals {
+		label := l.Name
+		if l.Head {
+			label = "*" + label
+		}
+		parts := append([]string{label}, remoteParts[li]...)
+		out = append(out, refBadge{label: strings.Join(parts, "|"), kind: git.RefLocal, name: l.Name})
+	}
+	for i, r := range remotes {
+		if !merged[i] {
+			out = append(out, refBadge{label: r.Name, kind: git.RefRemote, name: r.Name})
+		}
+	}
+	for _, t := range tags {
+		out = append(out, refBadge{label: t.Name, kind: git.RefTag, name: t.Name})
+	}
+	return out
 }
 
 // logLine 追加一条命令日志。

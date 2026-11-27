@@ -939,6 +939,26 @@ type dirPickedMsg struct {
 	err  error
 }
 
+// revealLocalFile 在文件管理器中打开文件或其所在目录；本地不存在时提示。
+func (a *App) revealLocalFile(path string) tea.Cmd {
+	root := a.svc.RootPath()
+	if root == "" {
+		a.setToast(i18n.S("本地找不到文件: ", "file not found locally: ")+path, true)
+		return nil
+	}
+	full := filepath.Join(root, filepath.FromSlash(path))
+	info, err := os.Stat(full)
+	if err != nil {
+		a.setToast(i18n.S("本地找不到文件: ", "file not found locally: ")+path, true)
+		return nil
+	}
+	dir := full
+	if !info.IsDir() {
+		dir = filepath.Dir(full)
+	}
+	return a.openInFileManager(dir)
+}
+
 // pickProjectDirCmd 调用系统目录选择框。
 func (a *App) pickProjectDirCmd() tea.Cmd {
 	pick := a.pickDir
