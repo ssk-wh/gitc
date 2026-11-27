@@ -145,6 +145,14 @@ func (f *fakeSvc) Commit(ctx context.Context, msg string, amend bool) (string, e
 	}
 	return f.record("commit:" + msg)
 }
+func (f *fakeSvc) EditCommitMessage(ctx context.Context, sha, message string) (string, error) {
+	return f.record("edit-message:" + sha)
+}
+
+func (f *fakeSvc) Squash(ctx context.Context, head, parent, message string) (string, error) {
+	return f.record("squash:" + head)
+}
+
 func (f *fakeSvc) Checkout(ctx context.Context, ref string) (string, error) {
 	return f.record("checkout:" + ref)
 }
@@ -1970,12 +1978,47 @@ func TestCommitSquashMenuAndPlan(t *testing.T) {
 // TestCommitEditMessagePrompt 读取提交信息后应打开可编辑弹窗。
 func TestCommitEditMessagePrompt(t *testing.T) {
 	a, _ := newFakeApp(t)
-	a.Update(commitMessageMsg{sha: "aaaaaaaaaaaa1111", message: "旧提交信息"})
+	a.Update(commitMessageMsg{gen: a.projectGen, svc: a.svc, sha: "aaaaaaaaaaaa1111", message: "旧提交信息"})
 	if a.modal == nil || a.modal.kind != modalText {
 		t.Fatalf("未打开提交信息编辑框: %+v", a.modal)
 	}
 	if !strings.Contains(a.modal.text.Value(), "旧提交信息") {
 		t.Fatalf("编辑框内容 = %q", a.modal.text.Value())
+	}
+}
+
+func TestHistoryPromptsIgnorePreviousProject(t *testing.T) {
+	a, svc := newFakeApp(t)
+	oldGen := a.projectGen
+	a.resetForProject()
+	a.Update(commitMessageMsg{gen: oldGen, svc: svc, sha: "aaaaaaaaaaaa1111", message: "旧项目", err: errors.New("旧项目错误")})
+	if a.modal != nil || a.toastErr {
+		t.Fatalf("旧项目的提交信息响应仍生效: modal=%+v toast=%q", a.modal, a.toast)
+	}
+	a.status.OID = "aaaaaaaaaaaa1111"
+	a.Update(squashMessagesMsg{gen: oldGen, svc: svc, hashes: []string{"aaaaaaaaaaaa1111", "bbbbbbbbbbbb2222"}, head: "aaaaaaaaaaaa1111", parent: "cccccccccccc3333", msg: "旧项目"})
+	if a.modal != nil {
+		t.Fatalf("旧项目的合并信息响应仍打开弹窗: %+v", a.modal)
+	}
+}
+
+func TestHistoryRewriteUsesRequestRepo(t *testing.T) {
+	a, current := newFakeApp(t)
+	original := &fakeSvc{}
+	a.editCommitMessagePrompt(original, "aaaaaaaaaaaa1111", "old")
+	_ = a.modal.onSubmit(a, "new")
+	op := firstOperationCmd(t, a.modal.onConfirm(a))
+	a.Update(op())
+	if len(current.calls) != 0 || len(original.calls) != 1 || original.calls[0] != "edit-message:aaaaaaaaaaaa1111" {
+		t.Fatalf("提交信息改写使用了错误仓库: current=%v original=%v", current.calls, original.calls)
+	}
+
+	a.openSquashPrompt(original, []string{"aaaaaaaaaaaa1111", "bbbbbbbbbbbb2222"}, "aaaaaaaaaaaa1111", "cccccccccccc3333", "old")
+	_ = a.modal.onSubmit(a, "new")
+	op = firstOperationCmd(t, a.modal.onConfirm(a))
+	a.Update(op())
+	if len(current.calls) != 0 || len(original.calls) != 2 || original.calls[1] != "squash:aaaaaaaaaaaa1111" {
+		t.Fatalf("合并提交使用了错误仓库: current=%v original=%v", current.calls, original.calls)
 	}
 }
 
@@ -2264,6 +2307,18 @@ func TestSystemDirPickAddsProject(t *testing.T) {
 	}
 }
 
+func TestSystemDirPickIgnoresPreviousProject(t *testing.T) {
+	a, _ := newFakeApp(t)
+	dir := t.TempDir()
+	a.pickDir = func() (string, error) { return dir, nil }
+	cmd := a.pickProjectDirCmd()
+	a.resetForProject()
+	a.Update(cmd())
+	if a.projectIndex(cleanProjectPath(dir)) >= 0 {
+		t.Fatal("旧项目的目录选择结果仍被添加")
+	}
+}
+
 // TestSystemDirPickFallback 系统选择框不可用时回退内置选择器。
 func TestSystemDirPickFallback(t *testing.T) {
 	a, _ := newFakeApp(t)
@@ -2384,6 +2439,49 @@ func TestLoadProjectBranches(t *testing.T) {
 	a.Update(cmd())
 	if a.projectBranch[cleanProjectPath(dirA)] == "" || a.projectBranch[cleanProjectPath(dirB)] == "" {
 		t.Fatalf("分支未加载: %+v", a.projectBranch)
+	}
+}
+
+func TestProjectMetadataIgnoresSupersededResponses(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := t.TempDir()
+	a.SetProjects([]string{root}, root)
+	stale := []git.Worktree{{Path: cleanProjectPath(root), Branch: "stale", Main: true}}
+	a.Update(worktreesMsg{gen: a.worktreesGen - 1, list: map[string][]git.Worktree{cleanProjectPath(root): stale}})
+	if len(a.worktrees[cleanProjectPath(root)]) != 0 {
+		t.Fatal("过期的 worktree 响应仍被应用")
+	}
+	current := []git.Worktree{{Path: cleanProjectPath(root), Branch: "main", Main: true}}
+	a.Update(worktreesMsg{gen: a.worktreesGen, list: map[string][]git.Worktree{cleanProjectPath(root): current}})
+	if len(a.worktrees[cleanProjectPath(root)]) != 1 {
+		t.Fatal("当前 worktree 响应未应用")
+	}
+
+	a.Update(projectBranchesMsg{gen: a.projectBranchesGen - 1, branches: map[string]string{cleanProjectPath(root): "stale"}})
+	if a.projectBranch[cleanProjectPath(root)] == "stale" {
+		t.Fatal("过期的分支响应仍被应用")
+	}
+	a.Update(projectBranchesMsg{gen: a.projectBranchesGen, branches: map[string]string{cleanProjectPath(root): "main"}})
+	if a.projectBranch[cleanProjectPath(root)] != "main" {
+		t.Fatal("当前分支响应未应用")
+	}
+}
+
+func TestWorktreeLoadCoalescesUntilResponse(t *testing.T) {
+	a, _ := newFakeApp(t)
+	if a.loadWorktreesCmd() == nil {
+		t.Fatal("首次 worktree 加载未启动")
+	}
+	if a.loadWorktreesCmd() != nil {
+		t.Fatal("worktree 加载中不应重复启动")
+	}
+	a.worktreesGen++
+	a.Update(worktreesMsg{gen: a.worktreesGen - 1})
+	if a.worktreesLoading {
+		t.Fatal("过期响应未解除加载状态")
+	}
+	if a.loadWorktreesCmd() == nil {
+		t.Fatal("响应结束后应允许再次加载")
 	}
 }
 
@@ -2638,6 +2736,47 @@ func TestProjectCacheRestore(t *testing.T) {
 	}
 }
 
+func TestProjectCacheTracksLogCompleteness(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := cleanProjectPath(t.TempDir())
+	a.currentPath = root
+	a.commits = make([]git.Commit, maxCachedCommits+1)
+	a.saveProjectCache()
+	if a.projectCache[root].logComplete {
+		t.Fatal("被截断的提交缓存不应标记为完整")
+	}
+	a.commits = a.commits[:maxCachedCommits]
+	a.saveProjectCache()
+	if !a.projectCache[root].logComplete {
+		t.Fatal("完整的小型提交缓存应标记为完整")
+	}
+	a.loadingLog = true
+	a.saveProjectCache()
+	if a.projectCache[root].logComplete {
+		t.Fatal("仍在加载的提交缓存不应标记为完整")
+	}
+	a.Update(logBatchMsg{gen: a.logGen, done: true, err: errors.New("读取日志失败")})
+	a.saveProjectCache()
+	if a.projectCache[root].logComplete {
+		t.Fatal("加载失败的提交缓存不应标记为完整")
+	}
+}
+
+func TestProjectCacheRestoreReloadsIncompleteLog(t *testing.T) {
+	a, _ := newFakeApp(t)
+	root := cleanProjectPath(t.TempDir())
+	a.currentPath = root
+	a.commits = sampleCommits()
+	a.refs = []git.Ref{{Name: "main", Kind: git.RefLocal, Target: "aaaaaaaaaaaa1111", Head: true}}
+	a.loadingLog = true
+	a.saveProjectCache()
+	a.resetForProject()
+	_, restored, reloadLog := a.restoreProjectCache(root)
+	if !restored || !reloadLog {
+		t.Fatalf("不完整缓存恢复后应重新加载日志: restored=%v reloadLog=%v", restored, reloadLog)
+	}
+}
+
 // TestFileMenuIgnore 未跟踪文件菜单提供添加到 .gitignore。
 func TestFileMenuIgnore(t *testing.T) {
 	a, _ := newFakeApp(t)
@@ -2744,7 +2883,7 @@ func TestWorktreesMsgExpands(t *testing.T) {
 	a.SetProjects([]string{root}, root)
 	a.currentPath = cleanProjectPath(root)
 	a.currentProjectPath = cleanProjectPath(root)
-	a.Update(worktreesMsg{list: map[string][]git.Worktree{
+	a.Update(worktreesMsg{gen: a.worktreesGen, list: map[string][]git.Worktree{
 		cleanProjectPath(root): {
 			{Path: cleanProjectPath(root), Branch: "main", Main: true},
 			{Path: cleanProjectPath(wt), Branch: "wt-branch"},
@@ -2897,7 +3036,7 @@ func TestWorktreeCurrentMarker(t *testing.T) {
 	a.currentProjectPath = cleanProjectPath(root)
 	// 模拟 git 输出：正斜杠路径
 	wtRaw := strings.ReplaceAll(cleanProjectPath(wt), string(rune(92)), "/")
-	a.Update(worktreesMsg{list: map[string][]git.Worktree{
+	a.Update(worktreesMsg{gen: a.worktreesGen, list: map[string][]git.Worktree{
 		cleanProjectPath(root): {
 			{Path: cleanProjectPath(root), Branch: "main", Main: true},
 			{Path: wtRaw, Branch: "wt-branch"},
@@ -3098,7 +3237,7 @@ func TestWorktreesMsgFiltersPrunable(t *testing.T) {
 	a.currentPath = cleanProjectPath(root)
 	a.currentProjectPath = cleanProjectPath(root)
 	missing := filepath.Join(t.TempDir(), "gone")
-	a.Update(worktreesMsg{list: map[string][]git.Worktree{
+	a.Update(worktreesMsg{gen: a.worktreesGen, list: map[string][]git.Worktree{
 		cleanProjectPath(root): {
 			{Path: cleanProjectPath(root), Branch: "main", Main: true},
 			{Path: missing, Branch: "gone", Prunable: true},
@@ -3183,7 +3322,7 @@ func TestWorktreesUnchangedSkipsUpdate(t *testing.T) {
 	a.worktrees[cleanProjectPath(root)] = list
 	a.projectSel = 0
 	a.projectOff = 0
-	_, cmd := a.Update(worktreesMsg{list: map[string][]git.Worktree{cleanProjectPath(root): list}})
+	_, cmd := a.Update(worktreesMsg{gen: a.worktreesGen, list: map[string][]git.Worktree{cleanProjectPath(root): list}})
 	if cmd != nil {
 		t.Fatal("worktree 无变化时不应返回命令")
 	}

@@ -510,7 +510,9 @@ func TestWriteOperationRejectsReentry(t *testing.T) {
 
 func TestWriteOperationCanCancelBeforeCommandStarts(t *testing.T) {
 	a, _ := newFakeApp(t)
+	calls := 0
 	op := firstOperationCmd(t, a.runOp("wait", func(ctx context.Context) (string, error) {
+		calls++
 		<-ctx.Done()
 		return "", ctx.Err()
 	}))
@@ -518,6 +520,9 @@ func TestWriteOperationCanCancelBeforeCommandStarts(t *testing.T) {
 	done, ok := op().(opDoneMsg)
 	if !ok || !errors.Is(done.err, context.Canceled) {
 		t.Fatalf("立即取消失败: %#v", done)
+	}
+	if calls != 0 {
+		t.Fatalf("已取消的操作仍被执行: calls=%d", calls)
 	}
 	a.Update(done)
 	if a.busy || a.opCancel != nil || !strings.Contains(a.toast, "已取消") {
@@ -543,7 +548,7 @@ func TestProgressOperationRejectsReentryAndCancelsBeforeStart(t *testing.T) {
 	}
 	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	done := op().(opDoneMsg)
-	if !errors.Is(done.err, context.Canceled) || calls != 1 {
+	if !errors.Is(done.err, context.Canceled) || calls != 0 {
 		t.Fatalf("进度操作取消失败: calls=%d err=%v", calls, done.err)
 	}
 	a.Update(done)

@@ -223,7 +223,7 @@ func TestIgnorePreservesPathWhitespaceAndRejectsSymlink(t *testing.T) {
 		}
 	}
 
-	outside := filepath.Join(t.TempDir(), "victim.txt")
+	outside := filepath.Join(tempDir(t), "victim.txt")
 	if err := os.WriteFile(outside, []byte("do not change\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -331,8 +331,8 @@ func TestStashOperationsFollowHashAfterStackShift(t *testing.T) {
 func TestRemoteBranchIdentityUsesLongestRemoteName(t *testing.T) {
 	_, dir := newTestRepo(t)
 	commitFile(t, dir, "a.txt", "base\n", "base")
-	remoteA := filepath.Join(t.TempDir(), "team.git")
-	remoteB := filepath.Join(t.TempDir(), "team-origin.git")
+	remoteA := filepath.Join(tempDir(t), "team.git")
+	remoteB := filepath.Join(tempDir(t), "team-origin.git")
 	runGit(t, dir, "init", "--bare", remoteA)
 	runGit(t, dir, "init", "--bare", remoteB)
 	runGit(t, dir, "remote", "add", "team", remoteA)
@@ -429,7 +429,7 @@ func TestCompareBranches(t *testing.T) {
 func TestUnsetUpstream(t *testing.T) {
 	_, dir := newTestRepo(t)
 	commitFile(t, dir, "a.txt", "1\n", "first")
-	remote := filepath.Join(t.TempDir(), "remote.git")
+	remote := filepath.Join(tempDir(t), "remote.git")
 	runGit(t, dir, "init", "--bare", remote)
 	r := mustRepo(t, dir)
 	ctx := context.Background()
@@ -470,7 +470,7 @@ func TestWorktreeLockUnlock(t *testing.T) {
 	commitFile(t, dir, "a.txt", "1\n", "first")
 	r := mustRepo(t, dir)
 	ctx := context.Background()
-	wtPath := filepath.Join(t.TempDir(), "wt")
+	wtPath := filepath.Join(tempDir(t), "wt")
 	if _, err := r.AddWorktree(ctx, wtPath, "wt-branch"); err != nil {
 		t.Fatalf("AddWorktree: %v", err)
 	}
@@ -512,7 +512,7 @@ func TestAddWorktreeExistingBranch(t *testing.T) {
 	runGit(t, dir, "branch", "existing")
 	r := mustRepo(t, dir)
 	ctx := context.Background()
-	wtPath := filepath.Join(t.TempDir(), "wt-existing")
+	wtPath := filepath.Join(tempDir(t), "wt-existing")
 	if _, err := r.AddWorktree(ctx, wtPath, "existing"); err != nil {
 		t.Fatalf("为已有分支添加 worktree: %v", err)
 	}
@@ -539,7 +539,7 @@ func TestRenameBranchUpstream(t *testing.T) {
 		t.Helper()
 		_, dir := newTestRepo(t)
 		commitFile(t, dir, "a.txt", "1\n", "first")
-		remote := filepath.Join(t.TempDir(), "remote.git")
+		remote := filepath.Join(tempDir(t), "remote.git")
 		runGit(t, dir, "init", "--bare", remote)
 		r := mustRepo(t, dir)
 		runGit(t, dir, "remote", "add", "origin", remote)

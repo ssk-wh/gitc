@@ -36,11 +36,11 @@ func TestAuthorDateOrder(t *testing.T) {
 	_, dir := newTestRepo(t)
 	commit := func(name, content, msg, date string) {
 		writeFile(t, dir, name, content)
-		cmd := exec.Command("git", "-C", dir, "add", "-A")
+		cmd := exec.Command("git", "-c", "core.fscache=false", "-C", dir, "add", "-A")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("add: %v %s", err, out)
 		}
-		cmd = exec.Command("git", "-C", dir, "commit", "-m", msg)
+		cmd = exec.Command("git", "-c", "core.fscache=false", "-C", dir, "commit", "-m", msg)
 		cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+date, "GIT_COMMITTER_DATE="+date)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("commit: %v %s", err, out)

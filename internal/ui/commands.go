@@ -308,6 +308,7 @@ func (a *App) reloadLogCmdPreserve() tea.Cmd {
 	}
 	a.stream = newLogStream(a.svc, maxCommits, a.branchFilter, a.branchFilterScope)
 	a.loadingLog = true
+	a.logFailed = false
 	a.truncated = false
 	return readBatchCmd(a.stream, gen)
 }
@@ -327,6 +328,7 @@ func (a *App) reloadLogCmd() tea.Cmd {
 	a.builder = graph.NewBuilder()
 	a.layout = a.builder.Layout()
 	a.loadingLog = true
+	a.logFailed = false
 	a.truncated = false
 	a.invalidateView()
 	return readBatchCmd(a.stream, gen)
@@ -344,6 +346,10 @@ func (a *App) runOp(name string, fn func(ctx context.Context) (string, error)) t
 	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
 	a.opCancel = cancel
 	return tea.Batch(func() tea.Msg {
+		if err := ctx.Err(); err != nil {
+			cancel()
+			return opDoneMsg{id: id, name: name, err: err}
+		}
 		out, err := fn(ctx)
 		if ctx.Err() != nil {
 			err = ctx.Err()
@@ -442,6 +448,8 @@ func (a *App) copyToClipboard(text string) tea.Cmd {
 
 // commitMessageMsg 是读取到的完整提交信息。
 type commitMessageMsg struct {
+	gen     int
+	svc     git.Service
 	sha     string
 	message string
 	err     error
@@ -450,16 +458,17 @@ type commitMessageMsg struct {
 // loadCommitMessageCmd 读取提交原始信息，随后打开编辑框。
 func (a *App) loadCommitMessageCmd(sha string) tea.Cmd {
 	svc := a.svc
+	gen := a.projectGen
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
 		msg, err := svc.CommitMessage(ctx, sha)
-		return commitMessageMsg{sha: sha, message: msg, err: err}
+		return commitMessageMsg{gen: gen, svc: svc, sha: sha, message: msg, err: err}
 	}
 }
 
 // editCommitMessagePrompt 打开提交信息编辑框并确认改写历史。
-func (a *App) editCommitMessagePrompt(sha, msg string) {
+func (a *App) editCommitMessagePrompt(svc git.Service, sha, msg string) {
 	a.promptText(i18n.S("编辑提交信息 "+shortSHA(sha)+"（改写历史）", "edit commit message "+shortSHA(sha)), "", msg, func(a *App, v string) tea.Cmd {
 		v = strings.TrimSpace(v)
 		if v == "" {
@@ -470,7 +479,7 @@ func (a *App) editCommitMessagePrompt(sha, msg string) {
 			i18n.S("会重写该提交及其后续提交；已推送时需强推。", "Rewrites this commit and descendants; a pushed branch needs force-push."),
 			"git rebase --onto <new> "+shortSHA(sha), true, func(a *App) tea.Cmd {
 				return a.runOp("edit message "+shortSHA(sha), func(ctx context.Context) (string, error) {
-					return a.svc.EditCommitMessage(ctx, sha, v)
+					return svc.EditCommitMessage(ctx, sha, v)
 				})
 			})
 		return nil
@@ -528,6 +537,8 @@ func (a *App) squashPlan() (hashes []string, head, parent, msg string, err error
 
 // squashMessagesMsg 是选中提交的完整信息集合。
 type squashMessagesMsg struct {
+	gen    int
+	svc    git.Service
 	hashes []string
 	head   string
 	parent string
@@ -538,6 +549,7 @@ type squashMessagesMsg struct {
 // loadSquashMessagesCmd 异步读取所有选中提交的完整提交信息（标题 + 正文）。
 func (a *App) loadSquashMessagesCmd(hashes []string, head, parent string) tea.Cmd {
 	svc := a.svc
+	gen := a.projectGen
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
@@ -545,13 +557,13 @@ func (a *App) loadSquashMessagesCmd(hashes []string, head, parent string) tea.Cm
 		for i := len(hashes) - 1; i >= 0; i-- {
 			msg, err := svc.CommitMessage(ctx, hashes[i])
 			if err != nil {
-				return squashMessagesMsg{err: err}
+				return squashMessagesMsg{gen: gen, svc: svc, err: err}
 			}
 			if msg = strings.TrimSpace(msg); msg != "" {
 				parts = append(parts, msg)
 			}
 		}
-		return squashMessagesMsg{hashes: hashes, head: head, parent: parent, msg: strings.Join(parts, string(rune(10))+string(rune(10)))}
+		return squashMessagesMsg{gen: gen, svc: svc, hashes: hashes, head: head, parent: parent, msg: strings.Join(parts, string(rune(10))+string(rune(10)))}
 	}
 }
 
@@ -566,7 +578,7 @@ func (a *App) squashPrompt() tea.Cmd {
 }
 
 // openSquashPrompt 用完整提交信息集合打开合并编辑框。
-func (a *App) openSquashPrompt(hashes []string, head, parent, msg string) {
+func (a *App) openSquashPrompt(svc git.Service, hashes []string, head, parent, msg string) {
 	n := len(hashes)
 	a.promptText(fmt.Sprintf(i18n.S("合并 %d 个提交（改写历史，可编辑提交信息）", "squash %d commits"), n), "", msg, func(a *App, v string) tea.Cmd {
 		v = strings.TrimSpace(v)
@@ -578,7 +590,7 @@ func (a *App) openSquashPrompt(hashes []string, head, parent, msg string) {
 			fmt.Sprintf(i18n.S("将 %s 到 %s 合并为一个提交；已推送时需强推。", "Squash %s..%s; a pushed branch needs force-push."), shortSHA(hashes[n-1]), shortSHA(head)),
 			"git reset --soft "+shortSHA(parent)+" && git commit", true, func(a *App) tea.Cmd {
 				return a.runOp(fmt.Sprintf("squash %d commits", n), func(ctx context.Context) (string, error) {
-					return a.svc.Squash(ctx, head, parent, v)
+					return svc.Squash(ctx, head, parent, v)
 				})
 			})
 		return nil
@@ -700,14 +712,15 @@ func (a *App) saveProjectCache() {
 		filterScope:  a.branchFilterScope,
 		filterLabel:  a.branchFilterLabel,
 		truncated:    a.truncated,
+		logComplete:  !a.loadingLog && !a.logFailed && !a.truncated && len(a.commits) <= maxCachedCommits,
 	}
 }
 
 // restoreProjectCache 用缓存立即渲染项目，返回需要异步加载的文件命令。
-func (a *App) restoreProjectCache(root string) (tea.Cmd, bool) {
+func (a *App) restoreProjectCache(root string) (tea.Cmd, bool, bool) {
 	c, ok := a.projectCache[root]
 	if !ok || (len(c.commits) == 0 && len(c.refs) == 0) {
-		return nil, false
+		return nil, false, false
 	}
 	a.commits = append([]git.Commit(nil), c.commits...)
 	a.refs = append([]git.Ref(nil), c.refs...)
@@ -718,6 +731,7 @@ func (a *App) restoreProjectCache(root string) (tea.Cmd, bool) {
 	a.branchColor = c.branchColor
 	a.branchFilter, a.branchFilterScope, a.branchFilterLabel = c.branchFilter, c.filterScope, c.filterLabel
 	a.graphSel, a.graphOff = c.graphSel, c.graphOff
+	a.logFailed = !c.logComplete
 	a.truncated = c.truncated
 	a.builder = graph.NewBuilder()
 	for _, commit := range a.commits {
@@ -740,7 +754,7 @@ func (a *App) restoreProjectCache(root string) (tea.Cmd, bool) {
 	} else {
 		cmd = a.loadFilesForSelection()
 	}
-	return cmd, true
+	return cmd, true, !c.logComplete
 }
 
 // switchToWorktree 切换当前仓库上下文到某个 worktree，不改变项目列表。
@@ -776,13 +790,17 @@ func (a *App) switchToWorktree(projectPath, wtPath string) tea.Cmd {
 	a.currentPath = root
 	a.currentProjectPath = cleanProjectPath(projectPath)
 	a.resetForProject()
-	fileCmd, restored := a.restoreProjectCache(root)
+	fileCmd, restored, reloadLog := a.restoreProjectCache(root)
 	a.projectSel = a.projectRowIndex(func(r projectRow) bool { return r.worktree != nil && r.worktree.Path == root })
 	a.ensureProjectVisible()
 	base := a.loadWorktreesCmd()
 	if restored {
 		a.verifyAfterRestore = true
-		return tea.Batch(a.refreshCmd(true), fileCmd, base)
+		cmds := []tea.Cmd{a.refreshCmd(true), fileCmd, base}
+		if reloadLog {
+			cmds = append(cmds, a.reloadLogCmdPreserve())
+		}
+		return tea.Batch(cmds...)
 	}
 	return tea.Batch(a.refreshCmd(true), a.reloadLogCmd(), base)
 }
@@ -839,14 +857,18 @@ func (a *App) switchProject(idx int) tea.Cmd {
 	a.currentProjectPath = root
 	a.resetForProject()
 	a.SetProjects(paths, root)
-	fileCmd, restored := a.restoreProjectCache(root)
+	fileCmd, restored, reloadLog := a.restoreProjectCache(root)
 	a.projectSel = a.projectRowIndex(func(r projectRow) bool { return r.worktree == nil && r.project.Path == root })
 	a.ensureProjectVisible()
 	a.saveConfig()
 	if restored {
 		// 先用缓存渲染，由随后的一次刷新校验是否有外部变化。
 		a.verifyAfterRestore = true
-		return tea.Batch(a.refreshCmd(true), fileCmd, a.loadProjectBranchesCmd(), a.loadWorktreesCmd())
+		cmds := []tea.Cmd{a.refreshCmd(true), fileCmd, a.loadProjectBranchesCmd(), a.loadWorktreesCmd()}
+		if reloadLog {
+			cmds = append(cmds, a.reloadLogCmdPreserve())
+		}
+		return tea.Batch(cmds...)
 	}
 	a.sideSelKey = "p:" + root
 	a.rebuildSidebar()
@@ -861,12 +883,14 @@ func (a *App) resetForProject() {
 	a.logGen++
 	a.searchGen++
 	a.detailGen++
+	a.projectGen++
 	a.detailKey = ""
 	a.filesGen++
 	a.contentGen++
 	a.busy = false
 	a.taskName = ""
 	a.loadingLog = false
+	a.logFailed = false
 	a.truncated = false
 	a.commits = nil
 	a.refs = nil
@@ -910,6 +934,7 @@ func (a *App) resetForProject() {
 
 // dirPickedMsg 是系统目录选择框的结果。
 type dirPickedMsg struct {
+	gen  int
 	path string
 	err  error
 }
@@ -917,19 +942,27 @@ type dirPickedMsg struct {
 // pickProjectDirCmd 调用系统目录选择框。
 func (a *App) pickProjectDirCmd() tea.Cmd {
 	pick := a.pickDir
+	gen := a.projectGen
 	return func() tea.Msg {
 		path, err := pick()
-		return dirPickedMsg{path: path, err: err}
+		return dirPickedMsg{gen: gen, path: path, err: err}
 	}
 }
 
 // worktreesMsg 是各项目 worktree 列表的加载结果。
 type worktreesMsg struct {
+	gen  int
 	list map[string][]git.Worktree
 }
 
 // loadWorktreesCmd 异步读取所有项目的 worktree。
 func (a *App) loadWorktreesCmd() tea.Cmd {
+	if a.worktreesLoading {
+		return nil
+	}
+	a.worktreesLoading = true
+	a.worktreesGen++
+	gen := a.worktreesGen
 	open := a.openRepo
 	projects := append([]projectEntry(nil), a.projects...)
 	return func() tea.Msg {
@@ -957,12 +990,13 @@ func (a *App) loadWorktreesCmd() tea.Cmd {
 			}
 			cancel()
 		}
-		return worktreesMsg{list: out}
+		return worktreesMsg{gen: gen, list: out}
 	}
 }
 
 // projectBranchesMsg 是各项目当前分支的加载结果。
 type projectBranchesMsg struct {
+	gen      int
 	branches map[string]string
 }
 
@@ -971,6 +1005,8 @@ func (a *App) loadProjectBranchesCmd() tea.Cmd {
 	if len(a.projects) <= 1 {
 		return nil
 	}
+	a.projectBranchesGen++
+	gen := a.projectBranchesGen
 	open := a.openRepo
 	projects := append([]projectEntry(nil), a.projects...)
 	return func() tea.Msg {
@@ -985,7 +1021,7 @@ func (a *App) loadProjectBranchesCmd() tea.Cmd {
 			}
 			cancel()
 		}
-		return projectBranchesMsg{branches: out}
+		return projectBranchesMsg{gen: gen, branches: out}
 	}
 }
 

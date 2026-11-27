@@ -393,6 +393,9 @@ func (r *Repo) Commit(ctx context.Context, message string, amend bool) (string, 
 
 // Ignore 把一个未跟踪路径加入仓库根目录的 .gitignore。
 func (r *Repo) Ignore(ctx context.Context, path string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	rel := filepath.ToSlash(path)
 	trailing := ""
 	if strings.HasSuffix(rel, "/") {
@@ -455,6 +458,9 @@ func (r *Repo) Ignore(ctx context.Context, path string) (string, error) {
 		return "", err
 	}
 	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	if err := os.Rename(tmpPath, file); err != nil {

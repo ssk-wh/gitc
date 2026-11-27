@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,8 +13,11 @@ import (
 
 func runGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.fscache=false", "-C", dir}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE=2026-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2026-01-01T00:00:00Z")
+	cmd.WaitDelay = 2 * time.Second
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v 失败: %v\n%s", args, err, out)
@@ -21,9 +25,24 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-func newTestRepo(t *testing.T) (*Repo, string) {
+func tempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	t.Cleanup(func() {
+		// Windows 上 Git 退出后文件句柄可能短暂保留。
+		for i := 0; i < 20; i++ {
+			if err := os.RemoveAll(dir); err == nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	})
+	return dir
+}
+
+func newTestRepo(t *testing.T) (*Repo, string) {
+	t.Helper()
+	dir := tempDir(t)
 	runGit(t, dir, "init", "-b", "main")
 	runGit(t, dir, "config", "user.name", "测试用户")
 	runGit(t, dir, "config", "user.email", "test@example.com")
@@ -321,7 +340,7 @@ func TestPushToLocalBare(t *testing.T) {
 	_, dir := newTestRepo(t)
 	ctx := context.Background()
 	commitFile(t, dir, "a.txt", "1\n", "c1")
-	remote := filepath.Join(t.TempDir(), "remote.git")
+	remote := filepath.Join(tempDir(t), "remote.git")
 	runGit(t, dir, "init", "--bare", remote)
 	r := mustRepo(t, dir)
 	runGit(t, dir, "remote", "add", "origin", remote)
@@ -371,7 +390,7 @@ func TestVersion(t *testing.T) {
 }
 
 func TestOpenNonRepo(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	if _, err := Open(dir); err == nil {
 		t.Fatal("非 git 目录应报错")
 	}
@@ -434,7 +453,7 @@ func TestDetachedHead(t *testing.T) {
 func TestWorktreeRefs(t *testing.T) {
 	_, dir := newTestRepo(t)
 	commitFile(t, dir, "a.txt", "1\n", "c1")
-	wt := filepath.Join(t.TempDir(), "wt")
+	wt := filepath.Join(tempDir(t), "wt")
 	runGit(t, dir, "worktree", "add", "-b", "wt-branch", wt)
 	r := mustRepo(t, wt)
 	if b := r.CurrentBranch(context.Background()); b != "wt-branch" {
@@ -542,7 +561,7 @@ func TestWorktrees(t *testing.T) {
 	r := mustRepo(t, dir)
 	commitFile(t, dir, "a.txt", "1", "first")
 	ctx := context.Background()
-	if _, err := r.AddWorktree(ctx, filepath.Join(t.TempDir(), "wt1"), "wt-branch"); err != nil {
+	if _, err := r.AddWorktree(ctx, filepath.Join(tempDir(t), "wt1"), "wt-branch"); err != nil {
 		t.Fatalf("AddWorktree: %v", err)
 	}
 	wts, err := r.Worktrees(ctx)
@@ -605,5 +624,19 @@ func TestIgnorePath(t *testing.T) {
 	data, _ = os.ReadFile(filepath.Join(dir, ".gitignore"))
 	if strings.Count(string(data), "/build/out.txt") != 1 {
 		t.Errorf("重复写入: %q", data)
+	}
+}
+
+func TestIgnoreCanceledContextDoesNotWrite(t *testing.T) {
+	_, dir := newTestRepo(t)
+	r := mustRepo(t, dir)
+	writeFile(t, dir, "build/out.txt", "x")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := r.Ignore(ctx, "build/out.txt"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("取消的 Ignore 应返回 context.Canceled: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf("取消后仍写入了 .gitignore: %v", err)
 	}
 }

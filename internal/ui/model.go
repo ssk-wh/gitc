@@ -182,6 +182,7 @@ type projectCache struct {
 	filterScope  string
 	filterLabel  string
 	truncated    bool
+	logComplete  bool
 }
 
 // projectRow 是项目区树形视图中的一行。
@@ -281,12 +282,14 @@ type App struct {
 	spinner    int
 	ticking    bool
 	loadingLog bool
+	logFailed  bool
 	truncated  bool
 
 	refreshGen int
 	logGen     int
 	searchGen  int
 	detailGen  int
+	projectGen int
 	detailKey  string
 	stream     *logStream
 
@@ -324,6 +327,9 @@ type App struct {
 	projectOff         int
 	projectBranch      map[string]string
 	projectCache       map[string]*projectCache
+	worktreesGen       int
+	worktreesLoading   bool
+	projectBranchesGen int
 	autoTicks          int
 	verifyAfterRestore bool
 	worktrees          map[string][]git.Worktree
@@ -366,6 +372,8 @@ func cleanProjectPath(p string) string {
 
 // SetProjects 设置项目列表；当前仓库始终包含在列表中。
 func (a *App) SetProjects(paths []string, current string) {
+	a.worktreesGen++
+	a.projectBranchesGen++
 	cur := cleanProjectPath(current)
 	seen := map[string]bool{}
 	var out []projectEntry
