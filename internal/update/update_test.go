@@ -116,6 +116,9 @@ func TestRunUpdatesExecutable(t *testing.T) {
 	if !strings.Contains(out.String(), "已更新到 v9.9.9") || !strings.Contains(out.String(), "SHA256 校验通过") {
 		t.Errorf("输出缺少更新信息:\n%s", out.String())
 	}
+	if !strings.Contains(out.String(), "下载") {
+		t.Errorf("输出缺少下载进度:\n%s", out.String())
+	}
 }
 
 func TestRunAlreadyLatest(t *testing.T) {
