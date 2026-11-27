@@ -3311,3 +3311,24 @@ func TestKeyboardMenuAnchorUsesSelectedRow(t *testing.T) {
 		t.Fatalf("b 菜单锚点 X = %d，期望 %d", a.modalAnchorX, b.x+2)
 	}
 }
+
+// TestHelpNoTitleAndNarrowTopPadding 帮助页不显示标题，单栏模式顶部留一个空行。
+func TestHelpNoTitleAndNarrowTopPadding(t *testing.T) {
+	a, _ := newFakeApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	a.overlay = overlayHelp
+	v := plainView(a)
+	if strings.Contains(v, "gitc 帮助") {
+		t.Fatalf("帮助页不应显示标题:\n%s", v)
+	}
+	lines := strings.Split(v, string(rune(10)))
+	if len(lines) < 2 {
+		t.Fatalf("帮助页行数不足:\n%s", v)
+	}
+	if strings.TrimSpace(lines[0]) != "" {
+		t.Fatalf("单栏帮助页顶部应留空行，首行 = %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "██████ ██ ██████ ██████") {
+		t.Fatalf("空行后应显示 Gitc 字标，第二行 = %q", lines[1])
+	}
+}

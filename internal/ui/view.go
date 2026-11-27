@@ -1459,7 +1459,7 @@ func (a *App) clampOverlayScroll() {
 			total = len(helpLines())
 		}
 	}
-	max := total - (a.height - 2)
+	max := total - a.helpContentRows()
 	if max < 0 {
 		max = 0
 	}
@@ -1526,14 +1526,10 @@ func colorizeDiffLine(line string, width int) string {
 
 // viewHelp 渲染帮助覆盖层。
 func (a *App) viewHelp() string {
-	viewH := a.height - 2
-	if viewH < 1 {
-		viewH = 1
-	}
+	viewH := a.helpContentRows()
 	var b strings.Builder
-	b.WriteString(styleTitle.Render(i18n.S("gitc 帮助", "gitc help")))
-	b.WriteByte('\n')
 	if a.width < helpSplitMinWidth {
+		b.WriteByte('\n')
 		lines := helpLines()
 		off := clampHelpOffset(a.detail.offset, len(lines), viewH)
 		end := off + viewH
@@ -1702,6 +1698,18 @@ func helpLines() []string {
 		lines = append(lines, "  "+styleAccent.Render(padRight(r[0], 22))+r[1])
 	}
 	return lines
+}
+
+// helpContentRows 返回帮助页除去底部提示后可用的内容行数。
+func (a *App) helpContentRows() int {
+	rows := a.height - 1
+	if a.width < helpSplitMinWidth {
+		rows--
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
 }
 
 // viewLog 渲染命令日志覆盖层。
