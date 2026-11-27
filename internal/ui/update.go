@@ -275,6 +275,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmds...)
 
 	case squashMessagesMsg:
+		if m.gen != a.projectGen {
+			return a, nil
+		}
 		if m.err != nil {
 			a.setToast(firstLine(m.err.Error()), true)
 			return a, nil
@@ -283,7 +286,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.setToast(i18n.S("提交已变化，请刷新后重试", "commits changed; refresh and retry"), true)
 			return a, nil
 		}
-		a.openSquashPrompt(m.hashes, m.head, m.parent, m.msg)
+		a.openSquashPrompt(m.svc, m.hashes, m.head, m.parent, m.msg)
 		return a, nil
 
 	case dirPickedMsg:
@@ -301,6 +304,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case worktreesMsg:
+		if m.gen != a.worktreesGen {
+			return a, nil
+		}
 		changed := false
 		for p, list := range m.list {
 			valid := make([]git.Worktree, 0, len(list))
@@ -334,6 +340,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case projectBranchesMsg:
+		if m.gen != a.projectBranchesGen {
+			return a, nil
+		}
 		for p, b := range m.branches {
 			a.projectBranch[p] = b
 		}
@@ -350,12 +359,15 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case commitMessageMsg:
+		if m.gen != a.projectGen {
+			return a, nil
+		}
 		if m.err != nil {
 			a.setToast(firstLine(m.err.Error()), true)
 			return a, nil
 		}
 		a.clearCommitSelection()
-		a.editCommitMessagePrompt(m.sha, m.message)
+		a.editCommitMessagePrompt(m.svc, m.sha, m.message)
 		return a, nil
 
 	case compareMsg:
@@ -1718,6 +1730,10 @@ func (a *App) runProgressOp(name string, fn func(ctx context.Context, progress f
 	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
 	a.opCancel = cancel
 	return tea.Batch(func() tea.Msg {
+		if err := ctx.Err(); err != nil {
+			cancel()
+			return opDoneMsg{id: id, name: name, err: err}
+		}
 		progress := func(line string) {
 			select {
 			case msgs <- progressMsg{id: id, line: line}:
