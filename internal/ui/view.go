@@ -1128,45 +1128,55 @@ func (a *App) renderRow(row int, layout *graph.Layout, vc []git.Commit, width in
 		graphPad = strings.Repeat(" ", dw)
 	}
 
-	// 引用徽标
-	refs := a.refsAt(c.Hash)
-	if len(refs) > 4 {
-		refs = refs[:4]
+	// 引用徽标：先本地分支（与同名远端合并），再 HEAD，再 tag。
+	badges := a.refBadges(c.Hash)
+	if len(badges) > 4 {
+		badges = badges[:4]
+	}
+	var branchBadges, tagBadges []refBadge
+	for _, b := range badges {
+		if b.kind == git.RefTag {
+			tagBadges = append(tagBadges, b)
+		} else {
+			branchBadges = append(branchBadges, b)
+		}
 	}
 	var badgeStyled strings.Builder
 	badgeWidth := 0
-	if isHead {
-		head := styleGood.Bold(true).Render("[HEAD]")
-		badgeStyled.WriteString(head + " ")
-		badgeWidth += 7
-	}
 	const badgeCap = 56
-	for _, r := range refs {
-		name := sanitize.Line(r.Name)
-		if r.Kind == git.RefLocal && r.Head {
-			name = "*" + name
-		}
-		txt := "[" + name + "]"
+	appendBadge := func(label, kind, name string, bold bool) {
+		txt := "[" + label + "]"
 		w := strWidth(txt)
 		if badgeWidth+w+1 > badgeCap {
-			// 长分支名不要整体丢弃：在剩余宽度内截断显示
-			avail := badgeCap - badgeWidth - 3 // 两个方括号 + 间隔
+			avail := badgeCap - badgeWidth - 3
 			if avail < 4 {
-				break
+				return
 			}
-			name = truncate(name, avail)
-			txt = "[" + name + "]"
+			label = truncate(label, avail)
+			txt = "[" + label + "]"
 			w = strWidth(txt)
 			if badgeWidth+w+1 > badgeCap {
-				break
+				return
 			}
 		}
 		badgeWidth += w + 1
-		style := refStyle(r.Kind)
-		if r.Kind == git.RefLocal || r.Kind == git.RefRemote {
-			style = lipgloss.NewStyle().Foreground(a.refColor(r.Kind, r.Name))
+		style := refStyle(kind)
+		if kind == git.RefLocal || kind == git.RefRemote {
+			style = lipgloss.NewStyle().Foreground(a.refColor(kind, name))
+		}
+		if bold {
+			style = style.Bold(true)
 		}
 		badgeStyled.WriteString(style.Render(txt) + " ")
+	}
+	for _, b := range branchBadges {
+		appendBadge(b.label, b.kind, b.name, false)
+	}
+	if isHead {
+		appendBadge("HEAD", "head", "", true)
+	}
+	for _, b := range tagBadges {
+		appendBadge(b.label, b.kind, b.name, false)
 	}
 
 	sha := styleDim.Render(c.Short)
