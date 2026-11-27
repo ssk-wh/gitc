@@ -3332,3 +3332,44 @@ func TestHelpNoTitleAndNarrowTopPadding(t *testing.T) {
 		t.Fatalf("空行后应显示 Gitc 字标，第二行 = %q", lines[1])
 	}
 }
+
+// TestAddProjectRejectsRepoSubdir 选择父仓库内的子目录时不能添加父仓库。
+func TestAddProjectRejectsRepoSubdir(t *testing.T) {
+	a, _ := newFakeApp(t)
+	parent := t.TempDir()
+	sub := filepath.Join(parent, "aipick")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a.openRepo = func(string) (git.Service, error) { return &fakeSvc{root: parent}, nil }
+	before := len(a.projects)
+	a.chooseProjectDir(sub)
+	if len(a.projects) != before {
+		t.Fatalf("子目录不应新增项目: %+v", a.projects)
+	}
+	if !strings.Contains(a.toast, "根目录") {
+		t.Fatalf("缺少仓库根目录提示: %q", a.toast)
+	}
+	if a.projectIndex(cleanProjectPath(parent)) >= 0 && before > 0 {
+		// 父仓库即使已存在也不能改变项目列表。
+		if len(a.projects) != before {
+			t.Fatal("项目列表被修改")
+		}
+	}
+}
+
+// TestAddProjectPickerShowsRootError 内置选择器在框内提示仓库根目录。
+func TestAddProjectPickerShowsRootError(t *testing.T) {
+	a, _ := newFakeApp(t)
+	parent := t.TempDir()
+	sub := filepath.Join(parent, "aipick")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a.openRepo = func(string) (git.Service, error) { return &fakeSvc{root: parent}, nil }
+	a.modal = &modal{kind: modalDirPicker, title: "选择项目目录"}
+	a.chooseProjectDir(sub)
+	if a.modal == nil || !strings.Contains(a.modal.err, "根目录") {
+		t.Fatalf("选择器未提示仓库根目录: %+v", a.modal)
+	}
+}

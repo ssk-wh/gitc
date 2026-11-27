@@ -1028,6 +1028,16 @@ func (a *App) loadProjectDir(dir string) {
 	sort.Strings(m.dirs)
 }
 
+// sameProjectDir 判断两个路径是否指向同一目录，兼容符号链接与 Windows 大小写。
+func sameProjectDir(a, b string) bool {
+	ai, aerr := os.Stat(a)
+	bi, berr := os.Stat(b)
+	if aerr == nil && berr == nil {
+		return os.SameFile(ai, bi)
+	}
+	return cleanProjectPath(a) == cleanProjectPath(b)
+}
+
 // chooseProjectDir 校验并添加目录对应的仓库。
 func (a *App) chooseProjectDir(dir string) tea.Cmd {
 	p := cleanProjectPath(dir)
@@ -1043,7 +1053,17 @@ func (a *App) chooseProjectDir(dir string) tea.Cmd {
 		}
 		return nil
 	}
-	if root := cleanProjectPath(svc.RootPath()); root != "" {
+	root := cleanProjectPath(svc.RootPath())
+	if root != "" && !sameProjectDir(p, root) {
+		msg := i18n.S("所选目录不是 Git 仓库根目录（仓库根目录：", "selected directory is not a Git repository root (root: ") + root + ")"
+		if a.modal != nil && a.modal.kind == modalDirPicker {
+			a.modal.err = msg
+		} else {
+			a.setToast(msg, true)
+		}
+		return nil
+	}
+	if root != "" {
 		p = root
 	}
 	if a.projectIndex(p) >= 0 {
